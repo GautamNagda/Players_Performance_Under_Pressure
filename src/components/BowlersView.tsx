@@ -319,6 +319,11 @@ export const BowlersView: React.FC<BowlersViewProps> = ({ data }) => {
                   <span className="px-2.5 py-0.5 rounded text-[10px] font-mono font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
                     {selectedBowler.archetype}
                   </span>
+                  {selectedBowler.rating_band && (
+                    <span className="px-2.5 py-0.5 rounded text-[10px] font-mono font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40">
+                      {selectedBowler.rating_band}
+                    </span>
+                  )}
                 </div>
                 <h3 className="text-2xl font-black text-white tracking-tight mt-1">
                   {selectedBowler.player_name}
@@ -417,6 +422,23 @@ export const BowlersView: React.FC<BowlersViewProps> = ({ data }) => {
                   <span className="font-bold text-amber-400">{selectedBowler.z_bgi > 0 ? `+${selectedBowler.z_bgi}` : selectedBowler.z_bgi}</span>
                 </div>
               </div>
+
+              {selectedBowler.bci !== undefined && (
+                <div className="grid grid-cols-3 gap-2 w-full mt-2 font-mono-stats text-xs text-center">
+                  <div className="bg-[#090F1E] p-1.5 rounded-lg border border-slate-800">
+                    <span className="text-[9px] text-slate-500 uppercase block">Clutch (BCI)</span>
+                    <span className="font-bold text-sky-400">{selectedBowler.bci}</span>
+                  </div>
+                  <div className="bg-[#090F1E] p-1.5 rounded-lg border border-slate-800">
+                    <span className="text-[9px] text-slate-500 uppercase block">Pressure (BPI)</span>
+                    <span className="font-bold text-purple-400">{selectedBowler.bpi}</span>
+                  </div>
+                  <div className="bg-[#090F1E] p-1.5 rounded-lg border border-slate-800">
+                    <span className="text-[9px] text-slate-500 uppercase block">Consistency</span>
+                    <span className="font-bold text-teal-400">{selectedBowler.consistency_score}</span>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Box 1: Batsmen Dominated (Bunnies) by this Bowler */}

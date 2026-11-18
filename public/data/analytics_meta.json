@@ -1,7 +1,7 @@
 {
   "system_name": "PLAYERS UNDER PRESSURE - RAJASTHAN ROYALS DECISION-INTELLIGENCE COMMAND CENTER",
   "version": "3.2.0-spec",
-  "computation_time_sec": 13.92,
+  "computation_time_sec": 101.85,
   "evaluation_scope": {
     "formats": [
       "T20",
@@ -10,7 +10,7 @@
     "batter_cutoff_balls": 300,
     "bowler_cutoff_balls": 240,
     "eligible_batters": 171,
-    "eligible_bowlers": 203,
+    "eligible_bowlers": 204,
     "shrinkage_k": 50.0
   },
   "pillars": [
