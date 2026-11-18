@@ -1,0 +1,32 @@
+# Dependencies
+node_modules/
+/.pnp
+.pnp.js
+
+# Production build artifacts
+dist/
+
+# Python cache & virtual environments
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+
+# Temporary and OS files
+.DS_Store
+Thumbs.db
+6af458274c1e8_data_pack/
+__MACOSX/
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Task logs & system caches
+*.log

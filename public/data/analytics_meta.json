@@ -1,0 +1,213 @@
+{
+  "execution_time_sec": 17.88,
+  "pillars": [
+    {
+      "pillar_id": 1,
+      "title": "Core Scoring, Wicket & Discipline",
+      "aspects": [
+        {
+          "code": "1.1",
+          "name": "Scoring Volume & Tempo",
+          "columns": "runs, is_four, is_six, extras_type",
+          "description": "Filter wides, evaluate true boundary % vs strike rotation."
+        },
+        {
+          "code": "1.2",
+          "name": "Dot-Ball Pressure & Stagnation",
+          "columns": "runs, extras_type, is_wicket",
+          "description": "Dot-ball creation for bowlers; dot-avoidance for batsmen."
+        },
+        {
+          "code": "1.3",
+          "name": "Wicket Attribution & True Survival",
+          "columns": "is_wicket, dismissal_type, dismissed_player_id",
+          "description": "Clean separation of bowler-credited wickets from run-outs and retirements."
+        },
+        {
+          "code": "1.4",
+          "name": "Discipline & Extra Penalty",
+          "columns": "extras_type, extras1_runs, extras_2_runs",
+          "description": "Penalty weighting for death-over unforced wides/no-balls."
+        },
+        {
+          "code": "1.5",
+          "name": "Partnership Support & Breaking",
+          "columns": "striker_id, non_striker_id, runs",
+          "description": "Crease survival when partner accelerates; 40+ run stand breaker."
+        }
+      ]
+    },
+    {
+      "pillar_id": 2,
+      "title": "Tactical, Biomechanical & Matchups",
+      "aspects": [
+        {
+          "code": "2.1",
+          "name": "Handedness & Angle Matchups",
+          "columns": "batting_type, bowling_type",
+          "description": "Efficiency vs opposite-handed and spin matchups (e.g. SLA vs LHB)."
+        },
+        {
+          "code": "2.2",
+          "name": "Pace vs. Spin Mastery",
+          "columns": "pace_or_spin",
+          "description": "Harmonic mean between pace & spin efficiency to penalize one-dimensional play."
+        },
+        {
+          "code": "2.3",
+          "name": "Speed & Express Pace Handling",
+          "columns": "bowl_speed",
+          "description": "Express pace (>=140 km/h) RAE and speed variance control."
+        },
+        {
+          "code": "2.4",
+          "name": "Delivery Style Variation",
+          "columns": "delivery_style",
+          "description": "Out-of-fold Expected Runs (xR) and Expected Wickets (xW) target-encoding."
+        },
+        {
+          "code": "2.5",
+          "name": "Line & Trajectory Control",
+          "columns": "over_or_around, on_or_off",
+          "description": "Trajectorial off-stump vs leg-stump containment and angles."
+        },
+        {
+          "code": "2.6",
+          "name": "Shot Selection & False-Shot Rate",
+          "columns": "stroke",
+          "description": "Categorical clustering into attacking, controlled, and false strokes."
+        }
+      ]
+    },
+    {
+      "pillar_id": 3,
+      "title": "Match Phase & Game-State Pressure",
+      "aspects": [
+        {
+          "code": "3.1",
+          "name": "Innings Phase Segmentation",
+          "columns": "overid, over_ball_num, innings_ball_num",
+          "description": "Powerplay (1-6), Middle (7-15), and Death (16-20) normalized baselines."
+        },
+        {
+          "code": "3.2",
+          "name": "Win Probability Added (WPA)",
+          "columns": "innings, runs, is_wicket, win_team_id",
+          "description": "XGBoost in-game win probability delta per delivery (WP_t - WP_t-1)."
+        },
+        {
+          "code": "3.3",
+          "name": "Collapse Recovery & Post-Wicket Shock",
+          "columns": "innings_ball_num, is_wicket, batting_order",
+          "description": "Stabilization when entering at >= 2 wickets down in Powerplay."
+        },
+        {
+          "code": "3.4",
+          "name": "Knockout Stage Multiplier (1.75x)",
+          "columns": "stage, knock_out",
+          "description": "Amplified leverage for Finals, Qualifiers, and Eliminators."
+        },
+        {
+          "code": "3.5",
+          "name": "Match-Winning Impact & POTM",
+          "columns": "win_team_id, man_of_the_match",
+          "description": "Isolating positive performance strictly in winning team contributions."
+        }
+      ]
+    },
+    {
+      "pillar_id": 4,
+      "title": "Venue, Conditions & Environment",
+      "aspects": [
+        {
+          "code": "4.1",
+          "name": "Venue Scoring Baseline (xR / xW)",
+          "columns": "venue_id",
+          "description": "True strike rate and economy relative to ground dimensions and historical par."
+        },
+        {
+          "code": "4.2",
+          "name": "Home vs. Away Resilience (1.40x)",
+          "columns": "venue_country, home_team_id, away_team_id",
+          "description": "Evaluating foreign/away conditions vs comfortable home ground baselines."
+        },
+        {
+          "code": "4.3",
+          "name": "Toss Disadvantage & Dew Factor (1.30x)",
+          "columns": "toss_win_team_id, innings, delivery_ist_time",
+          "description": "Night dew second innings defense after losing the coin toss."
+        }
+      ]
+    },
+    {
+      "pillar_id": 5,
+      "title": "Sequential & Micro-Momentum Dynamics",
+      "aspects": [
+        {
+          "code": "5.1",
+          "name": "3-Dot Chokehold Escape & Wicket Conversion",
+          "columns": "runs, extras_type, is_wicket",
+          "description": "Boundary/escape release vs 4th-ball wicket induction after 3 consecutive dots."
+        },
+        {
+          "code": "5.2",
+          "name": "Post-Boundary Bounce-Back Composure",
+          "columns": "is_four, is_six, bowler_runs",
+          "description": "Dot ball or wicket rate on the delivery immediately following a 4 or 6."
+        },
+        {
+          "code": "5.3",
+          "name": "Tail-Ender Strike Farming",
+          "columns": "non_striker_id, ns_order, over_ball_num",
+          "description": "Boundary hunting on balls 1-4 and single rotation on balls 5-6 when partner >= 8."
+        },
+        {
+          "code": "5.4",
+          "name": "6th-Ball Over-Closing Resilience",
+          "columns": "over_ball_num, overid",
+          "description": "Execution on final ball of over to protect economy and prevent momentum shift."
+        }
+      ]
+    },
+    {
+      "pillar_id": 6,
+      "title": "Decision Engineering & Shrinkage",
+      "aspects": [
+        {
+          "code": "6.1",
+          "name": "Empirical Bayes Shrinkage (k=50)",
+          "columns": "Derived Applicable Balls",
+          "description": "Shrinks small sample outliers toward prior mean (sh = sum / (n + 50)) to eliminate fluke spikes."
+        },
+        {
+          "code": "6.2",
+          "name": "Winsorized Z-Score Normalization",
+          "columns": "All sub-scores",
+          "description": "Capping standardized scores at +/- 3 sigma before composite index aggregation."
+        },
+        {
+          "code": "6.3",
+          "name": "Zero-Leakage Out-Of-Fold Validation",
+          "columns": "GroupKFold(3) by match_id",
+          "description": "Ensures ML models predict on unseen matches only, preventing lookahead bias."
+        }
+      ]
+    }
+  ],
+  "formulas": {
+    "batters": {
+      "equation": "PGAI_100 = clip(50 + 15 * (0.38*Z_PCE + 0.32*Z_PRR + 0.30*Z_GIQ), 0, 100)",
+      "pce": "0.55*sh('wpa') + 0.30*sh('rae_p') + 0.15*finish_rate",
+      "prr": "0.30*Z_pace + 0.25*Z_chain + 0.25*Z_collapse + 0.20*Z_matchup",
+      "giq": "0.35*Z_tempo + 0.25*Z_rotation + 0.20*Z_farm + 0.20*Z_control",
+      "multipliers": "M_t = (1 + 0.75*knockout) * (1 + 0.40*away) * (1 + 0.50*opener_elite) * (1 + 0.35*nemesis)"
+    },
+    "bowlers": {
+      "equation": "B_PGAI_100 = clip(50 + 15 * (0.40*Z_BCE + 0.30*Z_BCR + 0.30*Z_BGI), 0, 100)",
+      "bce": "0.45*sh('wpa') + 0.30*sh('rs') + 0.25*sh('wae')",
+      "bcr": "0.30*Z_bounce + 0.25*Z_close + 0.25*Z_matchup - 0.20*Z_dxtras",
+      "bgi": "0.35*Z_deceive + 0.30*Z_choke + 0.20*Z_plan + 0.15*Z_role",
+      "multipliers": "M_bowl = (1 + 0.75*knockout) * (1 + 0.40*away) * (1 + 0.30*dew) * (1 + 0.35*bunny) * (1 + 0.30*set_bat) * (1 + 0.25*dls_toss)"
+    }
+  }
+}
