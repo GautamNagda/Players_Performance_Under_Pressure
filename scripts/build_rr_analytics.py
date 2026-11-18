@@ -10,6 +10,7 @@ import os
 import sys
 import json
 import time
+import warnings
 from pathlib import Path
 from typing import Dict, Any, List, Set, Iterable
 
@@ -18,6 +19,21 @@ import pandas as pd
 from sklearn.model_selection import GroupKFold
 import lightgbm as lgb
 import xgboost as xgb
+
+# Suppress pandas & sklearn future downcasting/deprecations
+warnings.filterwarnings("ignore", category=FutureWarning)
+warnings.filterwarnings("ignore", category=UserWarning)
+try:
+    pd.set_option("future.no_silent_downcasting", True)
+except Exception:
+    pass
+
+# Ensure project root and scripts dir are in sys.path
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+SCRIPTS_DIR = Path(__file__).resolve().parent
+for p in [str(PROJECT_ROOT), str(SCRIPTS_DIR)]:
+    if p not in sys.path:
+        sys.path.insert(0, p)
 
 # ----------------------------------------------------------------- CONFIG
 MIN_BAT_BALLS = 300
@@ -82,6 +98,8 @@ def oof_predict(model_fn, X, y, groups, proba=False):
 
 def find_data_pack_dir() -> Path:
     candidates = [
+        PROJECT_ROOT / "Data Pack",
+        PROJECT_ROOT / "data pack",
         Path("Data Pack"),
         Path("data pack"),
         Path("./Data Pack"),
@@ -91,10 +109,12 @@ def find_data_pack_dir() -> Path:
     for c in candidates:
         if c.exists() and (c / "ball_by_ball.csv").exists():
             return c
-    for p in Path(".").iterdir():
-        if p.is_dir() and "data" in p.name.lower() and "pack" in p.name.lower():
-            if (p / "ball_by_ball.csv").exists():
-                return p
+    for root_cand in [PROJECT_ROOT, Path(".")]:
+        if root_cand.exists():
+            for p in root_cand.iterdir():
+                if p.is_dir() and "data" in p.name.lower() and "pack" in p.name.lower():
+                    if (p / "ball_by_ball.csv").exists():
+                        return p
     raise FileNotFoundError("Could not locate './data pack/' directory with required CSV files.")
 
 
@@ -107,7 +127,7 @@ def run_pipeline():
     data_dir = find_data_pack_dir()
     print(f"[*] Reading dataset from: {data_dir.resolve()}")
 
-    out_dir = Path("public/data")
+    out_dir = PROJECT_ROOT / "public" / "data"
     out_dir.mkdir(parents=True, exist_ok=True)
 
     # 1. Load CSVs and generate Table Profiles
@@ -326,6 +346,7 @@ def run_pipeline():
     df["rrr"] = np.where(chase, df["runs_left"] / df["balls_left"].clip(lower=1) * 6, np.nan)
     df["crr"] = df["cum_runs"] / df["legal_no"].clip(lower=1) * 6
     df["bat_won"] = df["batting_team_id"].eq(df["win_team_id"]).astype(int)
+    df["bowl_won"] = df["bowling_team_id"].eq(df["win_team_id"]).astype(int)
 
     for c in ("pace_or_spin", "delivery_style", "on_or_off", "over_or_around", "venue_id"):
         df[c] = df[c].astype("category")
@@ -368,8 +389,11 @@ def run_pipeline():
 
     dot_i = df["is_dot"].astype(np.int8)
     gdot = dot_i.groupby([df[c] for c in GB])
-    df["after_3_dots"] = (gdot.shift(1).fillna(0) + gdot.shift(2).fillna(0) + gdot.shift(3).fillna(0)) >= 3
-    df["post_wkt"] = df.groupby(GI)["is_wicket"].shift(1).fillna(0).eq(1) & ~df["striker_out"].shift(1).fillna(False)
+    s1_d = gdot.shift(1).fillna(0.0)
+    s2_d = gdot.shift(2).fillna(0.0)
+    s3_d = gdot.shift(3).fillna(0.0)
+    df["after_3_dots"] = (s1_d + s2_d + s3_d) >= 3.0
+    df["post_wkt"] = df.groupby(GI)["is_wicket"].shift(1).eq(1) & ~df["striker_out"].shift(1).eq(True)
 
     cw_prev = df.groupby(GI)["cum_wkts"].shift(1).fillna(0)
     cw_prev12 = df.groupby(GI)["cum_wkts"].shift(13).fillna(0)
@@ -382,7 +406,7 @@ def run_pipeline():
                          | df["knock_out"].eq(1) | df["revised_target"].notna())
 
     # Bowler boundary bounce & deception
-    prev_boundary = gb_bowl["is_boundary"].shift(1).fillna(False).astype(bool)
+    prev_boundary = gb_bowl["is_boundary"].shift(1).eq(True)
     sp_b = pd.concat([df["bowl_speed"], gb_bowl["bowl_speed"].shift(1), gb_bowl["bowl_speed"].shift(2)], axis=1)
     speed_std3 = sp_b.std(axis=1).fillna(0)
     def changed(col):
@@ -391,18 +415,21 @@ def run_pipeline():
     deceptive = (speed_std3 > 6.0) | changed("delivery_style") | changed("on_or_off") | changed("over_or_around")
 
     gdot_b = dot_i.groupby([df[c] for c in GBW])
-    after_3_dots_b = (gdot_b.shift(1).fillna(0) + gdot_b.shift(2).fillna(0) + gdot_b.shift(3).fillna(0)) >= 3
-    post_wkt_b = gb_bowl["bowler_wkt"].shift(1).fillna(0).eq(1)
+    s1_b = gdot_b.shift(1).fillna(0.0)
+    s2_b = gdot_b.shift(2).fillna(0.0)
+    s3_b = gdot_b.shift(3).fillna(0.0)
+    after_3_dots_b = (s1_b + s2_b + s3_b) >= 3.0
+    post_wkt_b = gb_bowl["bowler_wkt"].shift(1).eq(1)
     new_batter_b = df["bat_faced_before"] < 6
 
     # Unfavourable matchups
-    pairs = df[["bowling_type", "batting_type"]].fillna("").apply(lambda s: s.astype(str).str.lower()).drop_duplicates()
-    bt_p, ht_p = pairs["bowling_type"], pairs["batting_type"]
-    pairs["unfav"] = ((bt_p.str.contains("off") & ht_p.str.contains("left"))
-                      | (bt_p.str.contains("leg") & ht_p.str.contains("right"))
-                      | (bt_p.str.contains("orthodox") & ht_p.str.contains("right")))
-    key_pairs = df[["bowling_type", "batting_type"]].fillna("").apply(lambda s: s.astype(str).str.lower())
-    df["unfav_bowler"] = key_pairs.merge(pairs, on=["bowling_type", "batting_type"], how="left")["unfav"].to_numpy()
+    bt = df["bowling_type"].fillna("").astype(str).str.lower()
+    ht = df["batting_type"].fillna("").astype(str).str.lower()
+    df["unfav_bowler"] = (
+        (bt.str.contains("off") & ht.str.contains("left"))
+        | (bt.str.contains("leg") & ht.str.contains("right"))
+        | (bt.str.contains("orthodox") & ht.str.contains("right"))
+    )
 
     # Finish rate in tight successful chases (tight: winning match and RRR >= 8.0 or balls_left <= 12)
     last = (df[chase].groupby("match_id").agg(bl=("balls_left", "last"),
@@ -410,7 +437,7 @@ def run_pipeline():
     tight = last[(last["win"] == 1) & (last["bl"] <= 12)].index
     ch = df[chase & df["match_id"].isin(tight) & df["is_batter_ball"]]
     fin = (ch.groupby(["striker_id", "match_id"])["striker_out"].any().rename("out").reset_index()
-             .groupby("striker_id").agg(n=("out", "size"), nout=("out", lambda s: (~s).sum())))
+             .groupby("striker_id").agg(n=("out", "size"), nout=("out", lambda s: (s == False).sum())))
     finish_rate = (fin["nout"] / (fin["n"] + K_SHRINK)).rename("finish_rate")
 
     # =========================================================================
@@ -453,7 +480,7 @@ def run_pipeline():
 
     # 2. Chain release (after 3 dots) & partner survival
     after_dots = bat[bat["after_3_dots"]]
-    chain_release = after_dots.groupby("striker_id")["runs"].apply(lambda s: (s > 0).mean()) if len(after_dots) else pd.Series(dtype=float)
+    chain_release = (after_dots["runs"] > 0).astype(float).groupby(after_dots["striker_id"]).mean() if len(after_dots) else pd.Series(dtype=float)
     after_wkt = bat[bat["post_wkt"]]
     partner_survival = 1.0 - after_wkt.groupby("striker_id")["striker_out"].mean() if len(after_wkt) else pd.Series(dtype=float)
     chain_raw = pd.concat([chain_release.rename("rel"), partner_survival.rename("surv")], axis=1).mean(axis=1)
@@ -486,11 +513,12 @@ def run_pipeline():
     tempo_raw = tempo_rows.groupby("striker_id")["tempo_good"].mean() if len(tempo_rows) else pd.Series(dtype=float)
 
     # 2. Strike rotation in middle overs (7-15)
-    mid_rows = bat[bat["overid"].between(7, 15)]
-    rotation_raw = mid_rows.groupby("striker_id").apply(
-        lambda g: (g["runs"].isin([1, 2, 3]).sum() / max(len(g), 1)) - (g["runs"].eq(0).sum() / max(len(g), 1)),
-        include_groups=False
-    ) if len(mid_rows) else pd.Series(dtype=float)
+    mid_rows = bat[bat["overid"].between(7, 15)].copy()
+    if len(mid_rows):
+        mid_rows["_rot"] = np.where(mid_rows["runs"].isin([1, 2, 3]), 1.0, np.where(mid_rows["runs"].eq(0), -1.0, 0.0))
+        rotation_raw = mid_rows.groupby("striker_id")["_rot"].mean()
+    else:
+        rotation_raw = pd.Series(dtype=float)
 
     # 3. Strike farming with tail (non_striker order 8-11)
     tail_rows = bat[bat["ns_order"].between(8, 11) & (bat["rrr"].ge(8.0) | bat["wp_prev"].between(0.25, 0.75))].copy()
@@ -505,10 +533,9 @@ def run_pipeline():
         farm_raw = pd.Series(dtype=float)
 
     # 4. Anti-panic control
-    control_raw = bat.groupby("striker_id").apply(
-        lambda g: 1.0 - min(1.0, 0.7 * g["false_shot"].mean() + 0.3 * g["is_runout"].mean()),
-        include_groups=False
-    )
+    bat_fs = bat.groupby("striker_id")["false_shot"].mean()
+    bat_ro = bat.groupby("striker_id")["is_runout"].mean()
+    control_raw = 1.0 - (0.7 * bat_fs + 0.3 * bat_ro).clip(upper=1.0)
 
     # GIQ: scale100 normalisation and exact weights (35% tempo, 25% rotation, 20% farm, 20% control)
     I_tempo_align = scale100(tempo_raw)
@@ -570,45 +597,51 @@ def run_pipeline():
     bce_df["BCE_raw"] = 0.45 * bce_df["wpa"] / bce_den + 0.30 * bce_df["runs"] / bce_den + 0.25 * bce_df["wkt"] / bce_den
 
     # BCR: post boundary bounce, spell close (6th ball / long spell), matchup/env, discipline
-    post_bnd = bowl[prev_boundary.loc[bowl.index]]
-    bounce_raw = post_bnd.groupby("bowler_id").apply(
-        lambda x: x["is_dot"].mean() + x["bowler_wkt"].mean() - x["is_boundary"].mean() - x["is_extra_pen"].mean(),
-        include_groups=False
-    ) if len(post_bnd) else pd.Series(dtype=float)
+    post_bnd = bowl[prev_boundary.loc[bowl.index]].copy()
+    if len(post_bnd):
+        post_bnd["_score"] = post_bnd["is_dot"].astype(float) + post_bnd["bowler_wkt"].astype(float) - post_bnd["is_boundary"].astype(float) - post_bnd["is_extra_pen"].astype(float)
+        bounce_raw = post_bnd.groupby("bowler_id")["_score"].mean()
+    else:
+        bounce_raw = pd.Series(dtype=float)
 
-    spell_b = bowl[bowl["over_ball_num"].eq(6) | bowl["spell_over"].ge(3)]
-    spell_raw = spell_b.groupby("bowler_id").apply(
-        lambda x: (x["xR"] - x["bowler_runs"]).mean() + x["is_dot"].mean() + x["bowler_wkt"].mean(),
-        include_groups=False
-    ) if len(spell_b) else pd.Series(dtype=float)
+    spell_b = bowl[bowl["over_ball_num"].eq(6) | bowl["spell_over"].ge(3)].copy()
+    if len(spell_b):
+        spell_b["_score"] = (spell_b["xR"] - spell_b["bowler_runs"]) + spell_b["is_dot"].astype(float) + spell_b["bowler_wkt"].astype(float)
+        spell_raw = spell_b.groupby("bowler_id")["_score"].mean()
+    else:
+        spell_raw = pd.Series(dtype=float)
 
-    env_b = bowl[bowl["unfav_bowler"] | bowl["is_away"] | bowl["is_dew"]]
-    env_raw = env_b.groupby("bowler_id").apply(
-        lambda x: (x["xR"] - x["bowler_runs"]).mean() + x["bowler_wkt"].mean(),
-        include_groups=False
-    ) if len(env_b) else pd.Series(dtype=float)
+    env_b = bowl[bowl["unfav_bowler"] | bowl["is_away"] | bowl["is_dew"]].copy()
+    if len(env_b):
+        env_b["_score"] = (env_b["xR"] - env_b["bowler_runs"]) + env_b["bowler_wkt"].astype(float)
+        env_raw = env_b.groupby("bowler_id")["_score"].mean()
+    else:
+        env_raw = pd.Series(dtype=float)
 
     disc_b = bowl[bowl["is_pressure"] | bowl["overid"].between(16, 20)]
     disc_raw = 1.0 - disc_b.groupby("bowler_id")["is_extra_pen"].mean() if len(disc_b) else pd.Series(dtype=float)
 
     # BGI: deception, chokehold (after 3 dots / post wkt / new batter), planning (off-side line), role load
-    dec_b = bowl[deceptive.loc[bowl.index]]
-    deception_raw = dec_b.groupby("bowler_id").apply(
-        lambda x: (x["xR"] - x["bowler_runs"]).mean() + x["false_shot"].mean(),
-        include_groups=False
-    ) if len(dec_b) else pd.Series(dtype=float)
+    dec_b = bowl[deceptive.loc[bowl.index]].copy()
+    if len(dec_b):
+        dec_b["_score"] = (dec_b["xR"] - dec_b["bowler_runs"]) + dec_b["false_shot"].astype(float)
+        deception_raw = dec_b.groupby("bowler_id")["_score"].mean()
+    else:
+        deception_raw = pd.Series(dtype=float)
 
-    choke_b = bowl[after_3_dots_b.loc[bowl.index] | post_wkt_b.loc[bowl.index] | new_batter_b.loc[bowl.index]]
-    choke_raw = choke_b.groupby("bowler_id").apply(
-        lambda x: x["is_dot"].mean() + x["bowler_wkt"].mean(),
-        include_groups=False
-    ) if len(choke_b) else pd.Series(dtype=float)
+    choke_b = bowl[after_3_dots_b.loc[bowl.index] | post_wkt_b.loc[bowl.index] | new_batter_b.loc[bowl.index]].copy()
+    if len(choke_b):
+        choke_b["_score"] = choke_b["is_dot"].astype(float) + choke_b["bowler_wkt"].astype(float)
+        choke_raw = choke_b.groupby("bowler_id")["_score"].mean()
+    else:
+        choke_raw = pd.Series(dtype=float)
 
-    plan_b = bowl[(bowl["is_pressure"] | bowl["overid"].ge(16)) & bowl["on_or_off"].astype(str).str.lower().eq("off")]
-    plan_raw = plan_b.groupby("bowler_id").apply(
-        lambda x: 1.0 - x["is_boundary"].mean() + x["false_shot"].mean(),
-        include_groups=False
-    ) if len(plan_b) else pd.Series(dtype=float)
+    plan_b = bowl[(bowl["is_pressure"] | bowl["overid"].ge(16)) & bowl["on_or_off"].astype(str).str.lower().eq("off")].copy()
+    if len(plan_b):
+        plan_b["_score"] = (1.0 - plan_b["is_boundary"].astype(float)) + plan_b["false_shot"].astype(float)
+        plan_raw = plan_b.groupby("bowler_id")["_score"].mean()
+    else:
+        plan_raw = pd.Series(dtype=float)
 
     role_raw = bowl.groupby("bowler_id")["role_load"].mean()
 
@@ -772,7 +805,7 @@ def run_pipeline():
         bowl_press_matches = (bdf[bdf["is_pressure"]].groupby("match_id")
                                  .agg(date=("match_date", "first"), runs=("bowler_runs", "sum"),
                                       balls=("is_legal", "sum"), wickets=("bowler_wkt", "sum"),
-                                      wpa=("bowl_wpa", "sum"), won=("bat_won", lambda s: ~s.iloc[0]))
+                                      wpa=("bowl_wpa", "sum"), won=("bowl_won", "first"))
                                  .reset_index().sort_values(by="date", ascending=False).head(5))
         bowl_last_pressure = []
         for _, bmrow in bowl_press_matches.iterrows():
@@ -783,7 +816,7 @@ def run_pipeline():
                 "balls": int(bmrow["balls"]),
                 "wickets": int(bmrow["wickets"]),
                 "wpa": round(float(bmrow["wpa"]), 3),
-                "won": bool(bmrow["won"])
+                "won": bool(bmrow["won"] == 1)
             })
 
         z_bce, z_bcr, z_bgi = bwrow["Z_BCE"], bwrow["Z_BCR"], bwrow["Z_BGI"]
