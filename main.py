@@ -7,16 +7,16 @@ import os
 import sys
 from pathlib import Path
 
-# Ensure project root is in sys.path for robust CLI and IDE imports
+# Ensure project root and scripts directory are in sys.path
 BASE_DIR = Path(__file__).resolve().parent
-if str(BASE_DIR) not in sys.path:
-    sys.path.insert(0, str(BASE_DIR))
+SCRIPTS_DIR = BASE_DIR / "scripts"
+for p in (BASE_DIR, SCRIPTS_DIR):
+    p_str = str(p)
+    if p_str not in sys.path:
+        sys.path.insert(0, p_str)
 
-# Import the pipeline from the scripts package (with fallback if run from within scripts)
-try:
-    from scripts.build_rr_analytics import run_pipeline
-except (ModuleNotFoundError, ImportError):
-    from build_rr_analytics import run_pipeline
+# Import the pipeline from the scripts package
+from scripts.build_rr_analytics import run_pipeline
 
 
 def main():
