@@ -1,4 +1,5 @@
-# 🏏 Rajasthan Royals Cricket Decision-Intelligence Command Center
+# 🏏 PLAYERS UNDER PRESSURE
+### *Rajasthan Royals Cricket Decision-Intelligence Command Center*
 ### *Pressure & Game-Awareness Indices (`PGAI_100` & `B-PGAI_100`)*
 **SupeRR Selector Season 2 • Official Rajasthan Royals Analytics Framework**
 
@@ -69,16 +70,16 @@ When deployed on Vercel, the Python backend in [`api/index.py`](./api/index.py) 
 
 | Rank | Batsman | Balls | Runs | Strike Rate | Pressure Balls | $Z_{\text{PCE}}$ | $Z_{\text{PRR}}$ | $Z_{\text{GIQ}}$ | **$\text{PGAI}_{100}$** | Tactical Archetype |
 | :---: | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :--- |
-| 🥇 **#1** | **Vaibhav Sooryavanshi** | 358 | 659 | **184.08** | 126 | +3.00 | +1.38 | +2.05 | **84.92** | Explosive Power Surge |
-| 🥈 **#2** | **Phil Salt** | 457 | 788 | **172.43** | 196 | +2.82 | +1.58 | +1.73 | **82.62** | Explosive Power Surge |
-| 🥉 **#3** | **Abhishek Sharma** | 569 | 1001 | **175.92** | 224 | +2.54 | +1.43 | +2.11 | **81.58** | Explosive Power Surge |
-| **#4** | **Tim David** | 433 | 689 | 159.12 | 227 | +1.91 | +1.64 | +1.69 | **76.53** | Death-Over Finisher |
-| **#5** | **Finn Allen** | 449 | 740 | 164.81 | 185 | +2.23 | +1.11 | +1.67 | **75.75** | Powerplay Enforcer |
-| **#6** | **Priyansh Arya** | 393 | 632 | 160.81 | 148 | +2.34 | +0.89 | +1.71 | **75.41** | Middle-Overs Pivot |
-| **#7** | **Suryakumar Yadav** | 682 | 1032 | 151.32 | 290 | +1.87 | +1.28 | +1.46 | **73.77** | 360° Game Tactician |
-| **#8** | **Jos Buttler** | 689 | 988 | 143.40 | 309 | +1.38 | +1.28 | +1.76 | **71.48** | Complete Match Winner |
-| **#9** | **Rajat Patidar** | 525 | 805 | 153.33 | 240 | +1.67 | +1.11 | +1.44 | **71.42** | Spin Demolisher |
-| **#10** | **Yashasvi Jaiswal** | 599 | 903 | 150.75 | 248 | +1.53 | +0.97 | +1.58 | **70.10** | High-Impact Anchor |
+| 🥇 **#1** | **Phil Salt** | 1,639 | 2,779 | **169.60** | 282 | +2.53 | +1.07 | +0.61 | **72.25** | Crisis Finisher |
+| 🥈 **#2** | **Finn Allen** | 818 | 1,444 | **176.50** | 111 | +2.73 | +1.30 | +0.00 | **71.78** | Crisis Finisher |
+| 🥉 **#3** | **Shai Hope** | 1,092 | 1,576 | 144.30 | 229 | +1.98 | +0.34 | +1.96 | **71.77** | Pressure Contender |
+| **#4** | **Suryakumar Yadav** | 2,727 | 4,543 | 166.60 | 977 | +1.47 | +1.88 | +0.60 | **70.10** | Pressure Contender |
+| **#5** | **Tim David** | 1,226 | 2,178 | 177.70 | 591 | +1.43 | +1.94 | +0.37 | **69.13** | Pressure Contender |
+| **#6** | **Naman Dhir** | 583 | 968 | 166.00 | 253 | +1.53 | +0.83 | +1.21 | **68.14** | Pressure Contender |
+| **#7** | **Abhishek Sharma** | 2,262 | 4,225 | **186.80** | 431 | +1.02 | +1.97 | +0.48 | **67.43** | Pressure Contender |
+| **#8** | **Heinrich Klaasen** | 1,417 | 2,363 | 166.80 | 613 | +0.87 | +1.21 | +1.35 | **66.81** | Pressure Contender |
+| **#9** | **Vaibhav Sooryavanshi** | 676 | 1,509 | **223.20** | 204 | +2.73 | +0.00 | +0.00 | **65.54** | Crisis Finisher |
+| **#10** | **Priyansh Arya** | 446 | 844 | **189.20** | 105 | +2.67 | +0.00 | +0.00 | **65.22** | Crisis Finisher |
 
 ---
 
@@ -87,16 +88,16 @@ When deployed on Vercel, the Python backend in [`api/index.py`](./api/index.py) 
 
 | Rank | Bowler | Legal Balls | Wickets | Runs Conc. | Economy | Pressure Balls | $Z_{\text{BCE}}$ | $Z_{\text{BCR}}$ | $Z_{\text{BGI}}$ | **$\text{B-PGAI}_{100}$** | Tactical Archetype |
 | :---: | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :--- |
-| 🥇 **#1** | **Jasprit Bumrah** | 1,722 | **94** | 2,123 | **7.40** | 715 | +2.94 | +3.00 | +2.93 | **94.32** | Clutch Strike Weapon |
-| 🥈 **#2** | **Sunil Narine** | 1,223 | **51** | 1,363 | **6.69** | 468 | +1.76 | +2.70 | +2.02 | **82.40** | Chokehold Spin Maestro |
-| 🥉 **#3** | **Sufiyan Muqeem** | 258 | 19 | 290 | **6.74** | 98 | +1.95 | +2.34 | +1.86 | **80.86** | Deceptive Mystery Weapon |
-| **#4** | **Nathan Ellis** | 718 | 44 | 1,003 | 8.38 | 321 | +1.98 | +2.07 | +2.10 | **80.80** | Death-Overs Specialist |
-| **#5** | **Abrar Ahmed** | 536 | 28 | 638 | 7.14 | 199 | +1.52 | +2.05 | +1.83 | **76.69** | Chokehold Spin Maestro |
-| **#6** | **Abbas Afridi** | 463 | 33 | 703 | 9.11 | 206 | +1.99 | +1.44 | +1.51 | **74.54** | High-Pace Impact Striker |
-| **#7** | **Mitchell Santner** | 425 | 18 | 463 | 6.54 | 149 | +0.94 | +2.53 | +1.65 | **74.43** | Chokehold Spin Maestro |
-| **#8** | **Krunal Pandya** | 694 | 26 | 823 | 7.12 | 239 | +1.09 | +2.18 | +1.82 | **73.12** | Chokehold Spin Maestro |
-| **#9** | **Corbin Bosch** | 240 | 15 | 322 | 8.05 | 100 | +1.43 | +1.78 | +1.43 | **72.64** | Pressure Phase Enforcer |
-| **#10** | **Shaheen Afridi** | 1,257 | 68 | 1,770 | 8.45 | 549 | +1.72 | +1.28 | +1.38 | **71.22** | Powerplay Strike Ace |
+| 🥇 **#1** | **Jasprit Bumrah** | 1,722 | **94** | 2,039 | **7.10** | 692 | +2.30 | +2.32 | +1.98 | **83.14** | Clutch Strike Weapon |
+| 🥈 **#2** | **Sufiyan Muqeem** | 519 | 41 | 524 | **6.06** | 243 | +2.30 | +2.32 | +1.54 | **81.16** | Clutch Strike Weapon |
+| 🥉 **#3** | **Abrar Ahmed** | 764 | 47 | 849 | **6.67** | 294 | +2.30 | +1.72 | +1.98 | **80.43** | Clutch Strike Weapon |
+| **#4** | **Sunil Narine** | 1,510 | 68 | 1,732 | **6.88** | 525 | +2.18 | +2.14 | +1.65 | **80.18** | Clutch Strike Weapon |
+| **#5** | **Mitchell Santner** | 1,707 | 86 | 2,085 | 7.33 | 540 | +1.98 | +1.29 | +1.97 | **76.50** | Death-Overs Specialist |
+| **#6** | **Nathan Ellis** | 904 | 63 | 1,204 | 7.99 | 332 | +2.10 | +1.86 | +0.92 | **75.11** | Clutch Strike Weapon |
+| **#7** | **Shaheen Afridi** | 967 | 66 | 1,264 | 7.84 | 285 | +1.73 | +1.58 | +1.49 | **74.18** | Pressure Phase Enforcer |
+| **#8** | **Corbin Bosch** | 370 | 35 | 522 | 8.46 | 160 | +1.39 | +2.32 | +1.03 | **73.42** | Chokehold Spin Maestro |
+| **#9** | **Abbas Afridi** | 455 | 42 | 621 | 8.19 | 99 | +1.99 | +2.08 | +0.43 | **73.26** | Chokehold Spin Maestro |
+| **#10** | **Sakib Hussain** | 253 | 16 | 374 | 8.87 | 169 | +1.42 | +1.11 | +1.88 | **71.97** | Pressure Phase Enforcer |
 
 ---
 

@@ -63,7 +63,7 @@ class handler(BaseHTTPRequestHandler):
         if path in ("", "/api", "/api/health"):
             res = {
                 "status": "healthy",
-                "service": "Rajasthan Royals Decision-Intelligence API",
+                "service": "PLAYERS UNDER PRESSURE - Rajasthan Royals Decision-Intelligence API",
                 "version": "1.0.0",
                 "models": ["xR (LightGBM)", "WPA (XGBoost)", "Empirical Bayes (k=50)"],
                 "endpoints": [

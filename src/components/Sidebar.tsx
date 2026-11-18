@@ -90,7 +90,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               <span className="text-xs font-bold tracking-widest text-rr-pink uppercase">Rajasthan Royals</span>
               <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
             </div>
-            <h1 className="text-sm font-extrabold text-white tracking-tight">PRESSURE WAR ROOM</h1>
+            <h1 className="text-sm font-extrabold text-white tracking-tight">PLAYERS UNDER PRESSURE</h1>
           </div>
         </div>
         <div className="mt-3 flex items-center justify-between text-[11px] text-slate-400 bg-slate-900/80 px-2.5 py-1.5 rounded-lg border border-slate-800">

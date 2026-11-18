@@ -111,8 +111,8 @@ export const App: React.FC = () => {
         {/* Top Header Strip */}
         <header className="h-14 border-b border-[#1E293B] bg-[#0A1020]/90 backdrop-blur-md px-6 flex items-center justify-between sticky top-0 z-20">
           <div className="flex items-center space-x-3">
-            <span className="text-xs font-mono text-slate-400 uppercase tracking-wider">
-              RR Analytics War Room
+            <span className="text-xs font-mono font-bold text-rr-pink uppercase tracking-wider">
+              PLAYERS UNDER PRESSURE
             </span>
             <span className="text-slate-600">/</span>
             <span className="text-xs font-bold text-white uppercase tracking-wider font-mono">

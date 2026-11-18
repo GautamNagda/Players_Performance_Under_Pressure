@@ -10,7 +10,9 @@ import {
   ShieldAlert,
   Calendar,
   Award,
-  Sparkles
+  Sparkles,
+  Activity,
+  Target
 } from 'lucide-react';
 import { 
   BarChart, 
@@ -21,7 +23,11 @@ import {
   ResponsiveContainer, 
   Legend, 
   CartesianGrid,
-  Cell
+  Radar, 
+  RadarChart, 
+  PolarGrid, 
+  PolarAngleAxis, 
+  PolarRadiusAxis
 } from 'recharts';
 import { BattersPGAIData, BatterProfile } from '../types/analytics';
 
@@ -30,14 +36,25 @@ interface BattersViewProps {
   onSelectPlayerForScout?: (batter: BatterProfile) => void;
 }
 
-export const BattersView: React.FC<BattersViewProps> = ({ data, onSelectPlayerForScout }) => {
-  const [selectedBatter, setSelectedBatter] = useState<BatterProfile | null>(data.top_10[0] || null);
+export const BattersView: React.FC<BattersViewProps> = ({ data }) => {
+  const top10 = data.top_10 || [];
+  const [selectedBatter, setSelectedBatter] = useState<BatterProfile | null>(top10[0] || null);
   const [searchQuery, setSearchQuery] = useState<string>('');
 
-  const top10 = data.top_10 || [];
   const filteredTop10 = top10.filter((b) =>
     b.player_name.toLowerCase().includes(searchQuery.toLowerCase())
   );
+
+  const handleSelectBatter = (batter: BatterProfile) => {
+    setSelectedBatter(batter);
+    // Smooth scroll down to deep dive profile section
+    setTimeout(() => {
+      const el = document.getElementById('batter-deep-dive');
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    }, 50);
+  };
 
   // Stacked Bar Data: PCE (38%), PRR (32%), GIQ (30%)
   const pillarData = top10.map((b) => ({
@@ -48,6 +65,15 @@ export const BattersView: React.FC<BattersViewProps> = ({ data, onSelectPlayerFo
     GIQ: Number((Math.max(0, b.z_giq + 3) * 0.30).toFixed(2)),
     pgai: b.pgai_100,
   }));
+
+  // Radar Data for currently selected player
+  const radarData = selectedBatter ? [
+    { subject: 'PCE (Clutch)', value: Math.max(20, Math.min(100, Math.round(50 + selectedBatter.z_pce * 16))), fullMark: 100 },
+    { subject: 'PRR (Pace)', value: Math.max(20, Math.min(100, Math.round(50 + selectedBatter.z_prr * 16))), fullMark: 100 },
+    { subject: 'GIQ (Game IQ)', value: Math.max(20, Math.min(100, Math.round(50 + selectedBatter.z_giq * 16))), fullMark: 100 },
+    { subject: 'Strike Rate', value: Math.max(20, Math.min(100, Math.round(selectedBatter.strike_rate / 2))), fullMark: 100 },
+    { subject: 'Finish Rate', value: Math.max(20, Math.min(100, Math.round((selectedBatter.finish_rate || 0.25) * 120))), fullMark: 100 },
+  ] : [];
 
   const podiumColors = [
     { border: 'border-amber-400', badge: 'bg-amber-500/20 text-amber-400 border-amber-500/40', text: 'text-amber-400', medal: '🥇 RANK 1' },
@@ -99,7 +125,7 @@ export const BattersView: React.FC<BattersViewProps> = ({ data, onSelectPlayerFo
           return (
             <div
               key={batter.player_id}
-              onClick={() => setSelectedBatter(batter)}
+              onClick={() => handleSelectBatter(batter)}
               className={`cursor-pointer rounded-2xl p-5 relative overflow-hidden transition-all duration-200 border ${
                 isSelected ? 'ring-2 ring-rr-pink border-rr-pink' : style.border
               } bg-gradient-to-b from-[#111A33] to-[#0A1020] hover:scale-[1.01] shadow-xl group`}
@@ -139,10 +165,18 @@ export const BattersView: React.FC<BattersViewProps> = ({ data, onSelectPlayerFo
                 </div>
               </div>
 
-              <div className="flex items-center justify-between mt-3 text-[11px] font-mono text-rr-pink pt-2 border-t border-slate-800/60">
-                <span>Select to inspect pressure profile below</span>
-                <ChevronRight className="w-4 h-4" />
-              </div>
+              {/* Functional Select to Inspect Button */}
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleSelectBatter(batter);
+                }}
+                className="w-full mt-3 flex items-center justify-between text-[11px] font-mono text-rr-pink bg-rr-pink/10 hover:bg-rr-pink/20 border border-rr-pink/30 px-3 py-1.5 rounded-lg transition-all group-hover:border-rr-pink/60"
+              >
+                <span className="font-semibold">Select to inspect pressure profile below</span>
+                <ChevronRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+              </button>
             </div>
           );
         })}
@@ -158,7 +192,7 @@ export const BattersView: React.FC<BattersViewProps> = ({ data, onSelectPlayerFo
             </h3>
           </div>
           <span className="text-xs font-mono text-slate-400">
-            Click any row to display match log & struggle bowlers below
+            Click any row to display stats, radar graph & struggle bowlers below
           </span>
         </div>
 
@@ -177,6 +211,7 @@ export const BattersView: React.FC<BattersViewProps> = ({ data, onSelectPlayerFo
                 <th className="py-3 px-3.5 text-center text-amber-400">Z_GIQ</th>
                 <th className="py-3 px-4 w-40 text-center">PGAI_100 Score</th>
                 <th className="py-3 px-3.5">Archetype Tag</th>
+                <th className="py-3 px-3 text-center">Inspect</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800/60 text-slate-300">
@@ -185,7 +220,7 @@ export const BattersView: React.FC<BattersViewProps> = ({ data, onSelectPlayerFo
                 return (
                   <tr
                     key={b.player_id}
-                    onClick={() => setSelectedBatter(b)}
+                    onClick={() => handleSelectBatter(b)}
                     className={`cursor-pointer transition-colors ${
                       isSelected ? 'bg-[#18233D] text-white font-semibold' : 'hover:bg-[#131F37]'
                     }`}
@@ -239,6 +274,17 @@ export const BattersView: React.FC<BattersViewProps> = ({ data, onSelectPlayerFo
                         {b.archetype}
                       </span>
                     </td>
+                    <td className="py-3 px-3 text-center">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleSelectBatter(b);
+                        }}
+                        className="px-2 py-1 rounded bg-rr-pink/10 hover:bg-rr-pink text-rr-pink hover:text-white text-[11px] font-mono font-semibold transition-colors border border-rr-pink/30"
+                      >
+                        Inspect
+                      </button>
+                    </td>
                   </tr>
                 );
               })}
@@ -247,98 +293,206 @@ export const BattersView: React.FC<BattersViewProps> = ({ data, onSelectPlayerFo
         </div>
       </div>
 
-      {/* Selected Batsman Deep Dive: Last Pressure Matches & Struggling Bowlers */}
+      {/* Selected Batsman Deep Dive: Stats & Radar Graph + Nemeses & Matches */}
       {selectedBatter && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-          {/* Box 1: Bowlers On Which This Batsman Struggles */}
-          <div className="bg-[#0F172A] rounded-2xl border border-[#1E293B] p-5">
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="text-xs font-bold text-white uppercase tracking-wider flex items-center space-x-2">
-                <ShieldAlert className="w-4 h-4 text-rose-400" />
-                <span>Bowlers Against Whom {selectedBatter.player_name} Struggles</span>
-              </h3>
-              <span className="text-[10px] font-mono text-slate-500">Historical Nemeses</span>
+        <div id="batter-deep-dive" className="space-y-5 scroll-mt-6">
+          {/* Header Banner & Stats Overview */}
+          <div className="bg-gradient-to-r from-[#1E0E25] via-[#111A33] to-[#0A1020] rounded-2xl border border-rr-pink/40 p-5 shadow-2xl relative overflow-hidden">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div>
+                <div className="flex items-center space-x-2">
+                  <span className="px-2.5 py-0.5 rounded text-[10px] font-mono font-bold bg-rr-pink/20 text-rr-pink border border-rr-pink/40">
+                    RANK #{selectedBatter.rank} • BATSMAN PRESSURE PROFILE
+                  </span>
+                  <span className="px-2.5 py-0.5 rounded text-[10px] font-mono font-semibold bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                    {selectedBatter.archetype}
+                  </span>
+                </div>
+                <h3 className="text-2xl font-black text-white tracking-tight mt-1">
+                  {selectedBatter.player_name}
+                </h3>
+                <p className="text-xs text-slate-400 font-mono mt-0.5">
+                  Detailed Situational Analytics & Head-to-Head Vulnerabilities
+                </p>
+              </div>
+
+              <div className="flex items-center space-x-4">
+                <div className="text-right">
+                  <span className="text-[10px] font-mono text-slate-500 uppercase block">PGAI_100 Score</span>
+                  <span className="text-4xl font-black text-rr-pink font-mono-stats">{selectedBatter.pgai_100}</span>
+                </div>
+              </div>
             </div>
 
-            {selectedBatter.nemesis_log?.length > 0 ? (
-              <div className="overflow-x-auto border border-slate-800 rounded-xl bg-[#090F1E]">
-                <table className="w-full text-left text-xs font-mono-stats">
-                  <thead className="bg-[#0A1020] text-slate-400 border-b border-slate-800 text-[11px]">
-                    <tr>
-                      <th className="py-2.5 px-3">Bowler</th>
-                      <th className="py-2.5 px-3 text-center">Balls</th>
-                      <th className="py-2.5 px-3 text-center">Runs</th>
-                      <th className="py-2.5 px-3 text-center text-rose-400">Dismissals</th>
-                      <th className="py-2.5 px-3 text-right">SR</th>
-                      <th className="py-2.5 px-3 text-right">Avg</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-800/60 text-slate-300">
-                    {selectedBatter.nemesis_log.map((nem, idx) => (
-                      <tr key={idx} className="hover:bg-slate-900/60">
-                        <td className="py-2.5 px-3 font-semibold text-white">{nem.bowler_name}</td>
-                        <td className="py-2.5 px-3 text-center text-slate-400">{nem.balls}</td>
-                        <td className="py-2.5 px-3 text-center">{nem.runs}</td>
-                        <td className="py-2.5 px-3 text-center font-bold text-rose-400">{nem.dismissals}</td>
-                        <td className="py-2.5 px-3 text-right">{nem.sr}</td>
-                        <td className="py-2.5 px-3 text-right font-bold text-slate-200">{nem.avg}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+            {/* Quick Metrics Bar */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3 mt-4 pt-4 border-t border-slate-800/80 font-mono-stats text-xs">
+              <div className="bg-[#090F1E] p-2.5 rounded-xl border border-slate-800">
+                <span className="text-[10px] text-slate-500 block">Total Runs</span>
+                <span className="text-base font-bold text-white">{selectedBatter.total_runs}</span>
               </div>
-            ) : (
-              <p className="text-xs font-mono text-slate-500 py-3">No repeat dismissals against any bowler recorded.</p>
-            )}
+              <div className="bg-[#090F1E] p-2.5 rounded-xl border border-slate-800">
+                <span className="text-[10px] text-slate-500 block">Balls Faced</span>
+                <span className="text-base font-bold text-white">{selectedBatter.balls_faced}</span>
+              </div>
+              <div className="bg-[#090F1E] p-2.5 rounded-xl border border-slate-800">
+                <span className="text-[10px] text-slate-500 block">Strike Rate</span>
+                <span className="text-base font-bold text-emerald-400">{selectedBatter.strike_rate}</span>
+              </div>
+              <div className="bg-[#090F1E] p-2.5 rounded-xl border border-slate-800">
+                <span className="text-[10px] text-slate-500 block">Pressure Balls</span>
+                <span className="text-base font-bold text-amber-400">{selectedBatter.pressure_balls}</span>
+              </div>
+              <div className="bg-[#090F1E] p-2.5 rounded-xl border border-slate-800">
+                <span className="text-[10px] text-slate-500 block">Finish Rate</span>
+                <span className="text-base font-bold text-sky-400">{Math.round((selectedBatter.finish_rate || 0) * 100)}%</span>
+              </div>
+              <div className="bg-[#090F1E] p-2.5 rounded-xl border border-slate-800">
+                <span className="text-[10px] text-slate-500 block">Z-Scores (P/R/G)</span>
+                <span className="text-xs font-bold text-slate-300">
+                  <span className="text-rr-pink">{selectedBatter.z_pce}</span> • <span className="text-blue-400">{selectedBatter.z_prr}</span> • <span className="text-amber-400">{selectedBatter.z_giq}</span>
+                </span>
+              </div>
+            </div>
           </div>
 
-          {/* Box 2: Performance in Last Pressure Matches */}
-          <div className="bg-[#0F172A] rounded-2xl border border-[#1E293B] p-5">
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="text-xs font-bold text-white uppercase tracking-wider flex items-center space-x-2">
-                <Calendar className="w-4 h-4 text-sky-400" />
-                <span>Recent High-Pressure Matches Log</span>
-              </h3>
-              <span className="text-[10px] font-mono text-slate-500">Chronological</span>
+          {/* Radar Chart + Pillars Breakdown */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
+            {/* Spider Radar Chart */}
+            <div className="lg:col-span-5 bg-[#0F172A] rounded-2xl border border-[#1E293B] p-5 flex flex-col items-center">
+              <div className="w-full flex items-center justify-between mb-2">
+                <h4 className="text-xs font-bold text-white uppercase tracking-wider flex items-center space-x-2">
+                  <Zap className="w-4 h-4 text-rr-pink" />
+                  <span>5-Axis Situational Capability Radar</span>
+                </h4>
+                <span className="text-[10px] font-mono text-slate-500">Normalized 0-100</span>
+              </div>
+              <div className="w-full h-64">
+                <ResponsiveContainer width="100%" height="100%">
+                  <RadarChart data={radarData} outerRadius="75%">
+                    <PolarGrid stroke="#1E293B" />
+                    <PolarAngleAxis 
+                      dataKey="subject" 
+                      stroke="#94A3B8" 
+                      tick={{ fill: '#94A3B8', fontSize: 11, fontFamily: 'JetBrains Mono' }} 
+                    />
+                    <PolarRadiusAxis 
+                      angle={30} 
+                      domain={[0, 100]} 
+                      stroke="#334155" 
+                      tick={false} 
+                    />
+                    <Radar
+                      name={selectedBatter.player_name}
+                      dataKey="value"
+                      stroke="#EA1A85"
+                      fill="#EA1A85"
+                      fillOpacity={0.4}
+                    />
+                  </RadarChart>
+                </ResponsiveContainer>
+              </div>
+              <div className="grid grid-cols-3 gap-2 w-full mt-2 font-mono-stats text-xs text-center">
+                <div className="bg-[#090F1E] p-2 rounded-lg border border-slate-800">
+                  <span className="text-[9px] text-slate-500 uppercase block">PCE (38%)</span>
+                  <span className="font-bold text-rr-pink">{selectedBatter.z_pce > 0 ? `+${selectedBatter.z_pce}` : selectedBatter.z_pce}</span>
+                </div>
+                <div className="bg-[#090F1E] p-2 rounded-lg border border-slate-800">
+                  <span className="text-[9px] text-slate-500 uppercase block">PRR (32%)</span>
+                  <span className="font-bold text-blue-400">{selectedBatter.z_prr > 0 ? `+${selectedBatter.z_prr}` : selectedBatter.z_prr}</span>
+                </div>
+                <div className="bg-[#090F1E] p-2 rounded-lg border border-slate-800">
+                  <span className="text-[9px] text-slate-500 uppercase block">GIQ (30%)</span>
+                  <span className="font-bold text-amber-400">{selectedBatter.z_giq > 0 ? `+${selectedBatter.z_giq}` : selectedBatter.z_giq}</span>
+                </div>
+              </div>
             </div>
 
-            <div className="space-y-2">
-              {selectedBatter.last_pressure_matches?.map((m, idx) => (
-                <div
-                  key={idx}
-                  className="bg-[#090F1E] border border-slate-800/80 p-3 rounded-xl flex items-center justify-between font-mono-stats text-xs hover:border-slate-700 transition-colors"
-                >
-                  <div className="flex items-center space-x-3">
-                    <div
-                      className={`w-7 h-7 rounded-lg flex items-center justify-center font-bold ${
-                        m.won ? 'bg-emerald-950 text-emerald-400 border border-emerald-800' : 'bg-rose-950 text-rose-400 border border-rose-800'
-                      }`}
-                    >
-                      {m.won ? 'W' : 'L'}
-                    </div>
-                    <div>
-                      <div className="flex items-center space-x-2">
-                        <span className="text-white font-bold text-sm">
-                          {m.runs} runs <span className="text-slate-400 text-xs font-normal">({m.balls}b)</span>
-                        </span>
-                        <span className="text-[10px] text-slate-500">Match #{m.match_id}</span>
-                      </div>
-                      <span className="text-[10px] text-slate-500">Date: {m.date}</span>
-                    </div>
-                  </div>
+            {/* Box 1: Bowlers On Which This Batsman Struggles */}
+            <div className="lg:col-span-7 bg-[#0F172A] rounded-2xl border border-[#1E293B] p-5">
+              <div className="flex items-center justify-between mb-3">
+                <h4 className="text-xs font-bold text-white uppercase tracking-wider flex items-center space-x-2">
+                  <ShieldAlert className="w-4 h-4 text-rose-400" />
+                  <span>Bowlers Against Whom {selectedBatter.player_name} Struggles</span>
+                </h4>
+                <span className="text-[10px] font-mono text-slate-500">Historical Nemeses</span>
+              </div>
 
-                  <div className="text-right">
-                    <span
-                      className={`font-bold block ${
-                        m.wpa >= 0 ? 'text-emerald-400' : 'text-rose-400'
-                      }`}
-                    >
-                      {m.wpa >= 0 ? `+${m.wpa}` : m.wpa} WPA
-                    </span>
-                    <span className="text-[9px] text-slate-500">Win Probability Added</span>
-                  </div>
+              {selectedBatter.nemesis_log?.length > 0 ? (
+                <div className="overflow-x-auto border border-slate-800 rounded-xl bg-[#090F1E]">
+                  <table className="w-full text-left text-xs font-mono-stats">
+                    <thead className="bg-[#0A1020] text-slate-400 border-b border-slate-800 text-[11px]">
+                      <tr>
+                        <th className="py-2.5 px-3">Bowler</th>
+                        <th className="py-2.5 px-3 text-center">Balls</th>
+                        <th className="py-2.5 px-3 text-center">Runs</th>
+                        <th className="py-2.5 px-3 text-center text-rose-400">Dismissals</th>
+                        <th className="py-2.5 px-3 text-right">SR</th>
+                        <th className="py-2.5 px-3 text-right">Avg</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-800/60 text-slate-300">
+                      {selectedBatter.nemesis_log.map((nem, idx) => (
+                        <tr key={idx} className="hover:bg-slate-900/60">
+                          <td className="py-2.5 px-3 font-semibold text-white">{nem.bowler_name}</td>
+                          <td className="py-2.5 px-3 text-center text-slate-400">{nem.balls}</td>
+                          <td className="py-2.5 px-3 text-center">{nem.runs}</td>
+                          <td className="py-2.5 px-3 text-center font-bold text-rose-400">{nem.dismissals}</td>
+                          <td className="py-2.5 px-3 text-right">{nem.sr}</td>
+                          <td className="py-2.5 px-3 text-right font-bold text-slate-200">{nem.avg}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
-              ))}
+              ) : (
+                <p className="text-xs font-mono text-slate-500 py-3">No repeat dismissals against any bowler recorded.</p>
+              )}
+
+              {/* Box 2: Performance in Last Pressure Matches */}
+              <div className="mt-5 pt-4 border-t border-slate-800">
+                <div className="flex items-center justify-between mb-3">
+                  <h4 className="text-xs font-bold text-white uppercase tracking-wider flex items-center space-x-2">
+                    <Calendar className="w-4 h-4 text-sky-400" />
+                    <span>Recent High-Pressure Matches Log</span>
+                  </h4>
+                  <span className="text-[10px] font-mono text-slate-500">Chronological Spells</span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {selectedBatter.last_pressure_matches?.map((m, idx) => (
+                    <div
+                      key={idx}
+                      className="bg-[#090F1E] border border-slate-800/80 p-2.5 rounded-xl flex items-center justify-between font-mono-stats text-xs hover:border-slate-700 transition-colors"
+                    >
+                      <div className="flex items-center space-x-2.5">
+                        <div
+                          className={`w-6 h-6 rounded-md flex items-center justify-center font-bold text-[10px] ${
+                            m.won ? 'bg-emerald-950 text-emerald-400 border border-emerald-800' : 'bg-rose-950 text-rose-400 border border-rose-800'
+                          }`}
+                        >
+                          {m.won ? 'W' : 'L'}
+                        </div>
+                        <div>
+                          <div className="text-white font-bold">
+                            {m.runs} runs <span className="text-slate-400 text-[10px] font-normal">({m.balls}b)</span>
+                          </div>
+                          <span className="text-[9px] text-slate-500">{m.date}</span>
+                        </div>
+                      </div>
+
+                      <div className="text-right">
+                        <span
+                          className={`font-bold text-xs ${
+                            m.wpa >= 0 ? 'text-emerald-400' : 'text-rose-400'
+                          }`}
+                        >
+                          {m.wpa >= 0 ? `+${m.wpa}` : m.wpa} WPA
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
             </div>
           </div>
         </div>

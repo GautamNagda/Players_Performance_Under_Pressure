@@ -8,7 +8,8 @@ import {
   Calendar,
   Sparkles,
   Zap,
-  Flame
+  Flame,
+  Activity
 } from 'lucide-react';
 import { 
   BarChart, 
@@ -22,7 +23,12 @@ import {
   Scatter, 
   ZAxis, 
   CartesianGrid,
-  Cell
+  Cell,
+  Radar, 
+  RadarChart, 
+  PolarGrid, 
+  PolarAngleAxis, 
+  PolarRadiusAxis
 } from 'recharts';
 import { BowlersPGAIData, BowlerProfile } from '../types/analytics';
 
@@ -38,6 +44,17 @@ export const BowlersView: React.FC<BowlersViewProps> = ({ data }) => {
   const filteredTop10 = top10.filter((b) =>
     b.player_name.toLowerCase().includes(searchQuery.toLowerCase())
   );
+
+  const handleSelectBowler = (bowler: BowlerProfile) => {
+    setSelectedBowler(bowler);
+    // Smooth scroll down to deep dive profile section
+    setTimeout(() => {
+      const el = document.getElementById('bowler-deep-dive');
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    }, 50);
+  };
 
   // Stacked Bar: BCE (40%), BCR (30%), BGI (30%)
   const pillarData = top10.map((b) => ({
@@ -58,6 +75,15 @@ export const BowlersView: React.FC<BowlersViewProps> = ({ data }) => {
     b_pgai: b.b_pgai_100,
     archetype: b.archetype,
   }));
+
+  // Radar Data for currently selected bowler
+  const radarData = selectedBowler ? [
+    { subject: 'BCE (Execution)', value: Math.max(20, Math.min(100, Math.round(50 + selectedBowler.z_bce * 16))), fullMark: 100 },
+    { subject: 'BCR (Composure)', value: Math.max(20, Math.min(100, Math.round(50 + selectedBowler.z_bcr * 16))), fullMark: 100 },
+    { subject: 'BGI (Game IQ)', value: Math.max(20, Math.min(100, Math.round(50 + selectedBowler.z_bgi * 16))), fullMark: 100 },
+    { subject: 'Economy Index', value: Math.max(20, Math.min(100, Math.round(Math.max(0, (12 - selectedBowler.economy) * 12)))), fullMark: 100 },
+    { subject: 'Wicket Strike', value: Math.max(20, Math.min(100, Math.round(Math.min(100, selectedBowler.wickets * 1.2)))), fullMark: 100 },
+  ] : [];
 
   const podiumColors = [
     { border: 'border-blue-400', badge: 'bg-blue-500/20 text-blue-400 border-blue-500/40', text: 'text-blue-400', medal: '🥇 RANK 1' },
@@ -109,7 +135,7 @@ export const BowlersView: React.FC<BowlersViewProps> = ({ data }) => {
           return (
             <div
               key={bowler.player_id}
-              onClick={() => setSelectedBowler(bowler)}
+              onClick={() => handleSelectBowler(bowler)}
               className={`cursor-pointer rounded-2xl p-5 relative overflow-hidden transition-all duration-200 border ${
                 isSelected ? 'ring-2 ring-blue-500 border-blue-400' : style.border
               } bg-gradient-to-b from-[#0F1E3D] to-[#0A1020] hover:scale-[1.01] shadow-xl group`}
@@ -149,10 +175,18 @@ export const BowlersView: React.FC<BowlersViewProps> = ({ data }) => {
                 </div>
               </div>
 
-              <div className="flex items-center justify-between mt-3 text-[11px] font-mono text-blue-400 pt-2 border-t border-slate-800/60">
-                <span>Select to inspect dominated bunnies below</span>
-                <ChevronRight className="w-4 h-4" />
-              </div>
+              {/* Functional Select to Inspect Button */}
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleSelectBowler(bowler);
+                }}
+                className="w-full mt-3 flex items-center justify-between text-[11px] font-mono text-blue-400 bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/30 px-3 py-1.5 rounded-lg transition-all group-hover:border-blue-500/60"
+              >
+                <span className="font-semibold">Select to inspect pressure profile below</span>
+                <ChevronRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+              </button>
             </div>
           );
         })}
@@ -168,7 +202,7 @@ export const BowlersView: React.FC<BowlersViewProps> = ({ data }) => {
             </h3>
           </div>
           <span className="text-xs font-mono text-slate-400">
-            Click any row to display match log & dominated bunnies below
+            Click any row to display stats, radar graph & dominated bunnies below
           </span>
         </div>
 
@@ -188,6 +222,7 @@ export const BowlersView: React.FC<BowlersViewProps> = ({ data }) => {
                 <th className="py-3 px-3.5 text-center text-amber-400">Z_BGI</th>
                 <th className="py-3 px-4 w-40 text-center">B-PGAI_100 Score</th>
                 <th className="py-3 px-3.5">Archetype Tag</th>
+                <th className="py-3 px-3 text-center">Inspect</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800/60 text-slate-300">
@@ -196,7 +231,7 @@ export const BowlersView: React.FC<BowlersViewProps> = ({ data }) => {
                 return (
                   <tr
                     key={b.player_id}
-                    onClick={() => setSelectedBowler(b)}
+                    onClick={() => handleSelectBowler(b)}
                     className={`cursor-pointer transition-colors ${
                       isSelected ? 'bg-[#132247] text-white font-semibold' : 'hover:bg-[#131F37]'
                     }`}
@@ -251,6 +286,17 @@ export const BowlersView: React.FC<BowlersViewProps> = ({ data }) => {
                         {b.archetype}
                       </span>
                     </td>
+                    <td className="py-3 px-3 text-center">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleSelectBowler(b);
+                        }}
+                        className="px-2 py-1 rounded bg-blue-500/10 hover:bg-blue-600 text-blue-400 hover:text-white text-[11px] font-mono font-semibold transition-colors border border-blue-500/30"
+                      >
+                        Inspect
+                      </button>
+                    </td>
                   </tr>
                 );
               })}
@@ -259,98 +305,206 @@ export const BowlersView: React.FC<BowlersViewProps> = ({ data }) => {
         </div>
       </div>
 
-      {/* Selected Bowler Deep Dive: Bunnies Dominated & Recent Pressure Matches */}
+      {/* Selected Bowler Deep Dive: Stats & Radar Graph + Bunnies & Matches */}
       {selectedBowler && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-          {/* Box 1: Batsmen Dominated (Bunnies) by this Bowler */}
-          <div className="bg-[#0F172A] rounded-2xl border border-[#1E293B] p-5">
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="text-xs font-bold text-white uppercase tracking-wider flex items-center space-x-2">
-                <Target className="w-4 h-4 text-emerald-400" />
-                <span>Batsmen Dominated by {selectedBowler.player_name}</span>
-              </h3>
-              <span className="text-[10px] font-mono text-slate-500">Historical Match-up Edge</span>
+        <div id="bowler-deep-dive" className="space-y-5 scroll-mt-6">
+          {/* Header Banner & Stats Overview */}
+          <div className="bg-gradient-to-r from-[#0E1D3E] via-[#0D152A] to-[#090F1E] rounded-2xl border border-blue-500/40 p-5 shadow-2xl relative overflow-hidden">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div>
+                <div className="flex items-center space-x-2">
+                  <span className="px-2.5 py-0.5 rounded text-[10px] font-mono font-bold bg-blue-500/20 text-blue-400 border border-blue-500/40">
+                    RANK #{selectedBowler.rank} • BOWLER PRESSURE PROFILE
+                  </span>
+                  <span className="px-2.5 py-0.5 rounded text-[10px] font-mono font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                    {selectedBowler.archetype}
+                  </span>
+                </div>
+                <h3 className="text-2xl font-black text-white tracking-tight mt-1">
+                  {selectedBowler.player_name}
+                </h3>
+                <p className="text-xs text-slate-400 font-mono mt-0.5">
+                  Detailed Situational Containment & Head-to-Head Batter Dominance
+                </p>
+              </div>
+
+              <div className="flex items-center space-x-4">
+                <div className="text-right">
+                  <span className="text-[10px] font-mono text-slate-500 uppercase block">B-PGAI_100 Score</span>
+                  <span className="text-4xl font-black text-blue-400 font-mono-stats">{selectedBowler.b_pgai_100}</span>
+                </div>
+              </div>
             </div>
 
-            {selectedBowler.bunnies_log?.length > 0 ? (
-              <div className="overflow-x-auto border border-slate-800 rounded-xl bg-[#090F1E]">
-                <table className="w-full text-left text-xs font-mono-stats">
-                  <thead className="bg-[#0A1020] text-slate-400 border-b border-slate-800 text-[11px]">
-                    <tr>
-                      <th className="py-2.5 px-3">Batsman</th>
-                      <th className="py-2.5 px-3 text-center">Balls</th>
-                      <th className="py-2.5 px-3 text-center">Runs</th>
-                      <th className="py-2.5 px-3 text-center text-emerald-400">Dismissals</th>
-                      <th className="py-2.5 px-3 text-right">SR</th>
-                      <th className="py-2.5 px-3 text-right">Avg</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-800/60 text-slate-300">
-                    {selectedBowler.bunnies_log.map((bunny, idx) => (
-                      <tr key={idx} className="hover:bg-slate-900/60">
-                        <td className="py-2.5 px-3 font-semibold text-white">{bunny.batter_name}</td>
-                        <td className="py-2.5 px-3 text-center text-slate-400">{bunny.balls}</td>
-                        <td className="py-2.5 px-3 text-center">{bunny.runs}</td>
-                        <td className="py-2.5 px-3 text-center font-bold text-emerald-400">{bunny.dismissals}</td>
-                        <td className="py-2.5 px-3 text-right">{bunny.sr}</td>
-                        <td className="py-2.5 px-3 text-right font-bold text-slate-200">{bunny.avg}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+            {/* Quick Metrics Bar */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3 mt-4 pt-4 border-t border-slate-800/80 font-mono-stats text-xs">
+              <div className="bg-[#090F1E] p-2.5 rounded-xl border border-slate-800">
+                <span className="text-[10px] text-slate-500 block">Wickets Taken</span>
+                <span className="text-base font-bold text-emerald-400">{selectedBowler.wickets}</span>
               </div>
-            ) : (
-              <p className="text-xs font-mono text-slate-500 py-3">No repeat dismissals against any batsman recorded.</p>
-            )}
+              <div className="bg-[#090F1E] p-2.5 rounded-xl border border-slate-800">
+                <span className="text-[10px] text-slate-500 block">Legal Balls</span>
+                <span className="text-base font-bold text-white">{selectedBowler.legal_balls}</span>
+              </div>
+              <div className="bg-[#090F1E] p-2.5 rounded-xl border border-slate-800">
+                <span className="text-[10px] text-slate-500 block">Economy Rate</span>
+                <span className="text-base font-bold text-white">{selectedBowler.economy} rpo</span>
+              </div>
+              <div className="bg-[#090F1E] p-2.5 rounded-xl border border-slate-800">
+                <span className="text-[10px] text-slate-500 block">Pressure Balls</span>
+                <span className="text-base font-bold text-amber-400">{selectedBowler.pressure_balls}</span>
+              </div>
+              <div className="bg-[#090F1E] p-2.5 rounded-xl border border-slate-800">
+                <span className="text-[10px] text-slate-500 block">Runs Conceded</span>
+                <span className="text-base font-bold text-slate-300">{selectedBowler.runs_conceded}</span>
+              </div>
+              <div className="bg-[#090F1E] p-2.5 rounded-xl border border-slate-800">
+                <span className="text-[10px] text-slate-500 block">Z-Scores (E/C/G)</span>
+                <span className="text-xs font-bold text-slate-300">
+                  <span className="text-blue-400">{selectedBowler.z_bce}</span> • <span className="text-emerald-400">{selectedBowler.z_bcr}</span> • <span className="text-amber-400">{selectedBowler.z_bgi}</span>
+                </span>
+              </div>
+            </div>
           </div>
 
-          {/* Box 2: Performance in Last Pressure Matches */}
-          <div className="bg-[#0F172A] rounded-2xl border border-[#1E293B] p-5">
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="text-xs font-bold text-white uppercase tracking-wider flex items-center space-x-2">
-                <Calendar className="w-4 h-4 text-blue-400" />
-                <span>Recent High-Pressure Matches Log</span>
-              </h3>
-              <span className="text-[10px] font-mono text-slate-500">Chronological Spells</span>
+          {/* Radar Chart + Bunnies & Matches Breakdown */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
+            {/* Spider Radar Chart */}
+            <div className="lg:col-span-5 bg-[#0F172A] rounded-2xl border border-[#1E293B] p-5 flex flex-col items-center">
+              <div className="w-full flex items-center justify-between mb-2">
+                <h4 className="text-xs font-bold text-white uppercase tracking-wider flex items-center space-x-2">
+                  <Zap className="w-4 h-4 text-blue-400" />
+                  <span>5-Axis Situational Capability Radar</span>
+                </h4>
+                <span className="text-[10px] font-mono text-slate-500">Normalized 0-100</span>
+              </div>
+              <div className="w-full h-64">
+                <ResponsiveContainer width="100%" height="100%">
+                  <RadarChart data={radarData} outerRadius="75%">
+                    <PolarGrid stroke="#1E293B" />
+                    <PolarAngleAxis 
+                      dataKey="subject" 
+                      stroke="#94A3B8" 
+                      tick={{ fill: '#94A3B8', fontSize: 11, fontFamily: 'JetBrains Mono' }} 
+                    />
+                    <PolarRadiusAxis 
+                      angle={30} 
+                      domain={[0, 100]} 
+                      stroke="#334155" 
+                      tick={false} 
+                    />
+                    <Radar
+                      name={selectedBowler.player_name}
+                      dataKey="value"
+                      stroke="#2563EB"
+                      fill="#2563EB"
+                      fillOpacity={0.4}
+                    />
+                  </RadarChart>
+                </ResponsiveContainer>
+              </div>
+              <div className="grid grid-cols-3 gap-2 w-full mt-2 font-mono-stats text-xs text-center">
+                <div className="bg-[#090F1E] p-2 rounded-lg border border-slate-800">
+                  <span className="text-[9px] text-slate-500 uppercase block">BCE (40%)</span>
+                  <span className="font-bold text-blue-400">{selectedBowler.z_bce > 0 ? `+${selectedBowler.z_bce}` : selectedBowler.z_bce}</span>
+                </div>
+                <div className="bg-[#090F1E] p-2 rounded-lg border border-slate-800">
+                  <span className="text-[9px] text-slate-500 uppercase block">BCR (30%)</span>
+                  <span className="font-bold text-emerald-400">{selectedBowler.z_bcr > 0 ? `+${selectedBowler.z_bcr}` : selectedBowler.z_bcr}</span>
+                </div>
+                <div className="bg-[#090F1E] p-2 rounded-lg border border-slate-800">
+                  <span className="text-[9px] text-slate-500 uppercase block">BGI (30%)</span>
+                  <span className="font-bold text-amber-400">{selectedBowler.z_bgi > 0 ? `+${selectedBowler.z_bgi}` : selectedBowler.z_bgi}</span>
+                </div>
+              </div>
             </div>
 
-            <div className="space-y-2">
-              {selectedBowler.last_pressure_matches?.map((m, idx) => (
-                <div
-                  key={idx}
-                  className="bg-[#090F1E] border border-slate-800/80 p-3 rounded-xl flex items-center justify-between font-mono-stats text-xs hover:border-slate-700 transition-colors"
-                >
-                  <div className="flex items-center space-x-3">
-                    <div
-                      className={`w-7 h-7 rounded-lg flex items-center justify-center font-bold ${
-                        m.won ? 'bg-emerald-950 text-emerald-400 border border-emerald-800' : 'bg-rose-950 text-rose-400 border border-rose-800'
-                      }`}
-                    >
-                      {m.won ? 'W' : 'L'}
-                    </div>
-                    <div>
-                      <div className="flex items-center space-x-2">
-                        <span className="text-white font-bold text-sm">
-                          {m.wickets ?? 0} wkts / {m.runs} runs <span className="text-slate-400 text-xs font-normal">({m.balls}b)</span>
-                        </span>
-                        <span className="text-[10px] text-slate-500">Match #{m.match_id}</span>
-                      </div>
-                      <span className="text-[10px] text-slate-500">Date: {m.date}</span>
-                    </div>
-                  </div>
+            {/* Box 1: Batsmen Dominated (Bunnies) by this Bowler */}
+            <div className="lg:col-span-7 bg-[#0F172A] rounded-2xl border border-[#1E293B] p-5">
+              <div className="flex items-center justify-between mb-3">
+                <h4 className="text-xs font-bold text-white uppercase tracking-wider flex items-center space-x-2">
+                  <Target className="w-4 h-4 text-emerald-400" />
+                  <span>Batsmen Dominated by {selectedBowler.player_name}</span>
+                </h4>
+                <span className="text-[10px] font-mono text-slate-500">Historical Match-up Edge</span>
+              </div>
 
-                  <div className="text-right">
-                    <span
-                      className={`font-bold block ${
-                        m.wpa >= 0 ? 'text-emerald-400' : 'text-rose-400'
-                      }`}
-                    >
-                      {m.wpa >= 0 ? `+${m.wpa}` : m.wpa} WPA
-                    </span>
-                    <span className="text-[9px] text-slate-500">Bowling Win Prob Added</span>
-                  </div>
+              {selectedBowler.bunnies_log?.length > 0 ? (
+                <div className="overflow-x-auto border border-slate-800 rounded-xl bg-[#090F1E]">
+                  <table className="w-full text-left text-xs font-mono-stats">
+                    <thead className="bg-[#0A1020] text-slate-400 border-b border-slate-800 text-[11px]">
+                      <tr>
+                        <th className="py-2.5 px-3">Batsman</th>
+                        <th className="py-2.5 px-3 text-center">Balls</th>
+                        <th className="py-2.5 px-3 text-center">Runs</th>
+                        <th className="py-2.5 px-3 text-center text-emerald-400">Dismissals</th>
+                        <th className="py-2.5 px-3 text-right">SR</th>
+                        <th className="py-2.5 px-3 text-right">Avg</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-800/60 text-slate-300">
+                      {selectedBowler.bunnies_log.map((bunny, idx) => (
+                        <tr key={idx} className="hover:bg-slate-900/60">
+                          <td className="py-2.5 px-3 font-semibold text-white">{bunny.batter_name}</td>
+                          <td className="py-2.5 px-3 text-center text-slate-400">{bunny.balls}</td>
+                          <td className="py-2.5 px-3 text-center">{bunny.runs}</td>
+                          <td className="py-2.5 px-3 text-center font-bold text-emerald-400">{bunny.dismissals}</td>
+                          <td className="py-2.5 px-3 text-right">{bunny.sr}</td>
+                          <td className="py-2.5 px-3 text-right font-bold text-slate-200">{bunny.avg}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
-              ))}
+              ) : (
+                <p className="text-xs font-mono text-slate-500 py-3">No repeat dismissals against any batsman recorded.</p>
+              )}
+
+              {/* Box 2: Performance in Last Pressure Matches */}
+              <div className="mt-5 pt-4 border-t border-slate-800">
+                <div className="flex items-center justify-between mb-3">
+                  <h4 className="text-xs font-bold text-white uppercase tracking-wider flex items-center space-x-2">
+                    <Calendar className="w-4 h-4 text-blue-400" />
+                    <span>Recent High-Pressure Matches Log</span>
+                  </h4>
+                  <span className="text-[10px] font-mono text-slate-500">Chronological Spells</span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {selectedBowler.last_pressure_matches?.map((m, idx) => (
+                    <div
+                      key={idx}
+                      className="bg-[#090F1E] border border-slate-800/80 p-2.5 rounded-xl flex items-center justify-between font-mono-stats text-xs hover:border-slate-700 transition-colors"
+                    >
+                      <div className="flex items-center space-x-2.5">
+                        <div
+                          className={`w-6 h-6 rounded-md flex items-center justify-center font-bold text-[10px] ${
+                            m.won ? 'bg-emerald-950 text-emerald-400 border border-emerald-800' : 'bg-rose-950 text-rose-400 border border-rose-800'
+                          }`}
+                        >
+                          {m.won ? 'W' : 'L'}
+                        </div>
+                        <div>
+                          <div className="text-white font-bold">
+                            {m.wickets ?? 0}w / {m.runs}r <span className="text-slate-400 text-[10px] font-normal">({m.balls}b)</span>
+                          </div>
+                          <span className="text-[9px] text-slate-500">{m.date}</span>
+                        </div>
+                      </div>
+
+                      <div className="text-right">
+                        <span
+                          className={`font-bold text-xs ${
+                            m.wpa >= 0 ? 'text-emerald-400' : 'text-rose-400'
+                          }`}
+                        >
+                          {m.wpa >= 0 ? `+${m.wpa}` : m.wpa} WPA
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
             </div>
           </div>
         </div>

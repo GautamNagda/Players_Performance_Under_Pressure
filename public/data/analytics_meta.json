@@ -1,213 +1,230 @@
 {
-  "execution_time_sec": 17.88,
+  "system_name": "PLAYERS UNDER PRESSURE - RAJASTHAN ROYALS DECISION-INTELLIGENCE COMMAND CENTER",
+  "version": "3.2.0-spec",
+  "computation_time_sec": 13.92,
+  "evaluation_scope": {
+    "formats": [
+      "T20",
+      "T20I"
+    ],
+    "batter_cutoff_balls": 300,
+    "bowler_cutoff_balls": 240,
+    "eligible_batters": 171,
+    "eligible_bowlers": 203,
+    "shrinkage_k": 50.0
+  },
   "pillars": [
     {
       "pillar_id": 1,
-      "title": "Core Scoring, Wicket & Discipline",
+      "title": "Pillar 1: Match Context & Tournament Stakes",
+      "description": "Adjusts baseline execution for structural match stakes, venue hostility, and knockout weight.",
       "aspects": [
         {
-          "code": "1.1",
-          "name": "Scoring Volume & Tempo",
-          "columns": "runs, is_four, is_six, extras_type",
-          "description": "Filter wides, evaluate true boundary % vs strike rotation."
+          "code": "A1",
+          "name": "Tournament Stage Multiplier",
+          "columns": "knock_out",
+          "description": "1.75x weight for knockout/playoff matches vs 1.0x league."
         },
         {
-          "code": "1.2",
-          "name": "Dot-Ball Pressure & Stagnation",
-          "columns": "runs, extras_type, is_wicket",
-          "description": "Dot-ball creation for bowlers; dot-avoidance for batsmen."
+          "code": "A2",
+          "name": "Home / Away Context",
+          "columns": "batting_team_id, away_team_id",
+          "description": "1.40x multiplier for away encounters in hostile conditions."
         },
         {
-          "code": "1.3",
-          "name": "Wicket Attribution & True Survival",
-          "columns": "is_wicket, dismissal_type, dismissed_player_id",
-          "description": "Clean separation of bowler-credited wickets from run-outs and retirements."
+          "code": "A3",
+          "name": "DLS Adjusted Target",
+          "columns": "revised_target",
+          "description": "Correct target scaling in rain-curtailed equations."
         },
         {
-          "code": "1.4",
-          "name": "Discipline & Extra Penalty",
-          "columns": "extras_type, extras1_runs, extras_2_runs",
-          "description": "Penalty weighting for death-over unforced wides/no-balls."
+          "code": "A4",
+          "name": "Opening Elite Threat",
+          "columns": "overid, bowling_team_id",
+          "description": "1.50x multiplier facing top 20% economy bowlers in Over 1."
         },
         {
-          "code": "1.5",
-          "name": "Partnership Support & Breaking",
-          "columns": "striker_id, non_striker_id, runs",
-          "description": "Crease survival when partner accelerates; 40+ run stand breaker."
+          "code": "A5",
+          "name": "Historical Head-to-Head",
+          "columns": "striker_id, bowler_id",
+          "description": "1.35x multiplier against proven historical nemeses / bunnies."
         }
       ]
     },
     {
       "pillar_id": 2,
-      "title": "Tactical, Biomechanical & Matchups",
+      "title": "Pillar 2: In-Game Situation & Match Equation",
+      "description": "Dynamic in-play leverage tracking and win probability fluctuation under fluctuating equations.",
       "aspects": [
         {
-          "code": "2.1",
-          "name": "Handedness & Angle Matchups",
-          "columns": "batting_type, bowling_type",
-          "description": "Efficiency vs opposite-handed and spin matchups (e.g. SLA vs LHB)."
+          "code": "A6",
+          "name": "Required Run Rate Inflation",
+          "columns": "rrr, runs_left, balls_left",
+          "description": "High pressure triggered when RRR > 10.0 in chase."
         },
         {
-          "code": "2.2",
-          "name": "Pace vs. Spin Mastery",
-          "columns": "pace_or_spin",
-          "description": "Harmonic mean between pace & spin efficiency to penalize one-dimensional play."
+          "code": "A7",
+          "name": "Competitive Win Probability",
+          "columns": "wp, wp_prev",
+          "description": "High leverage state when Win Probability is within [0.25, 0.75]."
         },
         {
-          "code": "2.3",
-          "name": "Speed & Express Pace Handling",
-          "columns": "bowl_speed",
-          "description": "Express pace (>=140 km/h) RAE and speed variance control."
+          "code": "A8",
+          "name": "Death Over Clutches",
+          "columns": "overid (16-20)",
+          "description": "High leverage delivery execution in closing 5 overs."
         },
         {
-          "code": "2.4",
-          "name": "Delivery Style Variation",
-          "columns": "delivery_style",
-          "description": "Out-of-fold Expected Runs (xR) and Expected Wickets (xW) target-encoding."
-        },
-        {
-          "code": "2.5",
-          "name": "Line & Trajectory Control",
-          "columns": "over_or_around, on_or_off",
-          "description": "Trajectorial off-stump vs leg-stump containment and angles."
-        },
-        {
-          "code": "2.6",
-          "name": "Shot Selection & False-Shot Rate",
-          "columns": "stroke",
-          "description": "Categorical clustering into attacking, controlled, and false strokes."
+          "code": "A9",
+          "name": "Wicket Cluster Shock",
+          "columns": "cum_wkts, post_wkt",
+          "description": "Immediate delivery resilience following partner dismissal."
         }
       ]
     },
     {
       "pillar_id": 3,
-      "title": "Match Phase & Game-State Pressure",
+      "title": "Pillar 3: Match-Up & Individual Head-to-Head",
+      "description": "Zero-leakage historical head-to-head records and pace/spin archetype resistance.",
       "aspects": [
         {
-          "code": "3.1",
-          "name": "Innings Phase Segmentation",
-          "columns": "overid, over_ball_num, innings_ball_num",
-          "description": "Powerplay (1-6), Middle (7-15), and Death (16-20) normalized baselines."
+          "code": "A10",
+          "name": "Express Pace Resistance",
+          "columns": "bowl_speed > 140",
+          "description": "Performance and runs above expectation against express pace."
         },
         {
-          "code": "3.2",
-          "name": "Win Probability Added (WPA)",
-          "columns": "innings, runs, is_wicket, win_team_id",
-          "description": "XGBoost in-game win probability delta per delivery (WP_t - WP_t-1)."
+          "code": "A11",
+          "name": "Delivery Speed Variation",
+          "columns": "bowl_speed rolling delta > 12",
+          "description": "Deception resistance against varying bowling speeds."
         },
         {
-          "code": "3.3",
-          "name": "Collapse Recovery & Post-Wicket Shock",
-          "columns": "innings_ball_num, is_wicket, batting_order",
-          "description": "Stabilization when entering at >= 2 wickets down in Powerplay."
-        },
-        {
-          "code": "3.4",
-          "name": "Knockout Stage Multiplier (1.75x)",
-          "columns": "stage, knock_out",
-          "description": "Amplified leverage for Finals, Qualifiers, and Eliminators."
-        },
-        {
-          "code": "3.5",
-          "name": "Match-Winning Impact & POTM",
-          "columns": "win_team_id, man_of_the_match",
-          "description": "Isolating positive performance strictly in winning team contributions."
+          "code": "A12",
+          "name": "Delivery Style Changes",
+          "columns": "delivery_style",
+          "description": "Handling unexpected changes in arm angle and bowling styles."
         }
       ]
     },
     {
       "pillar_id": 4,
-      "title": "Venue, Conditions & Environment",
+      "title": "Pillar 4: Dynamic Strategy & Game Awareness",
+      "description": "Context-aware game pacing, strike rotation, and crisis rebuild tactics.",
       "aspects": [
         {
-          "code": "4.1",
-          "name": "Venue Scoring Baseline (xR / xW)",
-          "columns": "venue_id",
-          "description": "True strike rate and economy relative to ground dimensions and historical par."
+          "code": "A13",
+          "name": "Crisis Rebuild Tempo",
+          "columns": "rebuild, stroke",
+          "description": "Risk mitigation and dot minimization after early collapses."
         },
         {
-          "code": "4.2",
-          "name": "Home vs. Away Resilience (1.40x)",
-          "columns": "venue_country, home_team_id, away_team_id",
-          "description": "Evaluating foreign/away conditions vs comfortable home ground baselines."
+          "code": "A14",
+          "name": "Target Pacing Acceleration",
+          "columns": "attack, rrr",
+          "description": "Calculated boundary assault when required rate escalates."
         },
         {
-          "code": "4.3",
-          "name": "Toss Disadvantage & Dew Factor (1.30x)",
-          "columns": "toss_win_team_id, innings, delivery_ist_time",
-          "description": "Night dew second innings defense after losing the coin toss."
+          "code": "A15",
+          "name": "Middle-Over Rotation",
+          "columns": "runs in [1,2,3], overid 7-15",
+          "description": "Strike rotation rate vs dot-ball avoidance in overs 7-15."
+        },
+        {
+          "code": "A16",
+          "name": "Tail-End Strike Farming",
+          "columns": "ns_order (8-11), over_ball_num",
+          "description": "Boundary attempts on balls 1-4, single retention on balls 5-6."
         }
       ]
     },
     {
       "pillar_id": 5,
-      "title": "Sequential & Micro-Momentum Dynamics",
+      "title": "Pillar 5: Tactical Execution Under Pressure",
+      "description": "Chokehold release, boundary bounce-back composure, and over closing.",
       "aspects": [
         {
-          "code": "5.1",
-          "name": "3-Dot Chokehold Escape & Wicket Conversion",
-          "columns": "runs, extras_type, is_wicket",
-          "description": "Boundary/escape release vs 4th-ball wicket induction after 3 consecutive dots."
+          "code": "A17",
+          "name": "3-Dot Chokehold Release",
+          "columns": "after_3_dots",
+          "description": "Scoring immediately after absorbing 3 consecutive dot balls."
         },
         {
-          "code": "5.2",
-          "name": "Post-Boundary Bounce-Back Composure",
-          "columns": "is_four, is_six, bowler_runs",
-          "description": "Dot ball or wicket rate on the delivery immediately following a 4 or 6."
+          "code": "A18",
+          "name": "Post-Boundary Bounce-Back",
+          "columns": "prev_boundary",
+          "description": "Bowler recovery (dot/wicket) immediately after conceding 4 or 6."
         },
         {
-          "code": "5.3",
-          "name": "Tail-Ender Strike Farming",
-          "columns": "non_striker_id, ns_order, over_ball_num",
-          "description": "Boundary hunting on balls 1-4 and single rotation on balls 5-6 when partner >= 8."
-        },
-        {
-          "code": "5.4",
-          "name": "6th-Ball Over-Closing Resilience",
-          "columns": "over_ball_num, overid",
-          "description": "Execution on final ball of over to protect economy and prevent momentum shift."
+          "code": "A19",
+          "name": "6th-Ball Over Closing",
+          "columns": "over_ball_num == 6",
+          "description": "Denying strike rotation or taking wickets on the final delivery of an over."
         }
       ]
     },
     {
       "pillar_id": 6,
-      "title": "Decision Engineering & Shrinkage",
+      "title": "Pillar 6: Physical & Environmental Conditions",
+      "description": "Environmental resistance against night dew, fatigue, and hostile venue conditions.",
       "aspects": [
         {
-          "code": "6.1",
-          "name": "Empirical Bayes Shrinkage (k=50)",
-          "columns": "Derived Applicable Balls",
-          "description": "Shrinks small sample outliers toward prior mean (sh = sum / (n + 50)) to eliminate fluke spikes."
+          "code": "A20",
+          "name": "2nd-Innings Dew Factor",
+          "columns": "innings == 2, delivery_ist_time >= 19:00",
+          "description": "Ball gripping and defensive bowling with wet ball under dew."
         },
         {
-          "code": "6.2",
-          "name": "Winsorized Z-Score Normalization",
-          "columns": "All sub-scores",
-          "description": "Capping standardized scores at +/- 3 sigma before composite index aggregation."
+          "code": "A21",
+          "name": "Hostile Away Venues",
+          "columns": "away_team_id, venue_id",
+          "description": "Execution when away against local venue specialists."
+        }
+      ]
+    },
+    {
+      "pillar_id": 7,
+      "title": "Pillar 7: Opposition Threat Assessment",
+      "description": "Overcoming elite strike attacks and defending against set batters.",
+      "aspects": [
+        {
+          "code": "A22",
+          "name": "Set Batter Dismissal",
+          "columns": "is_set_batter (balls >= 20)",
+          "description": "Bowler breakthrough against established, set opposition batters."
         },
         {
-          "code": "6.3",
-          "name": "Zero-Leakage Out-Of-Fold Validation",
-          "columns": "GroupKFold(3) by match_id",
-          "description": "Ensures ML models predict on unseen matches only, preventing lookahead bias."
+          "code": "A23",
+          "name": "Off-Side Boundary Denial",
+          "columns": "on_or_off == 'off', overid >= 16",
+          "description": "Tactical wide yorker and off-side defensive field execution."
+        }
+      ]
+    },
+    {
+      "pillar_id": 8,
+      "title": "Pillar 8: Cognitive & Mental Composure",
+      "description": "Anti-panic control, run-out avoidance, role-load handling, and match finishing.",
+      "aspects": [
+        {
+          "code": "A24",
+          "name": "Anti-Panic Control",
+          "columns": "false_shot, is_runout",
+          "description": "Minimizing false shots and high-pressure run-out errors."
+        },
+        {
+          "code": "A25",
+          "name": "Unbeaten Chase Finish Rate",
+          "columns": "finish_rate",
+          "description": "Guiding team across the line unbeaten in tight chases."
+        },
+        {
+          "code": "A26",
+          "name": "Captaincy & Impact Load",
+          "columns": "is_captain, is_impact_off",
+          "description": "Shouldering leadership and strategic tactical role duties."
         }
       ]
     }
-  ],
-  "formulas": {
-    "batters": {
-      "equation": "PGAI_100 = clip(50 + 15 * (0.38*Z_PCE + 0.32*Z_PRR + 0.30*Z_GIQ), 0, 100)",
-      "pce": "0.55*sh('wpa') + 0.30*sh('rae_p') + 0.15*finish_rate",
-      "prr": "0.30*Z_pace + 0.25*Z_chain + 0.25*Z_collapse + 0.20*Z_matchup",
-      "giq": "0.35*Z_tempo + 0.25*Z_rotation + 0.20*Z_farm + 0.20*Z_control",
-      "multipliers": "M_t = (1 + 0.75*knockout) * (1 + 0.40*away) * (1 + 0.50*opener_elite) * (1 + 0.35*nemesis)"
-    },
-    "bowlers": {
-      "equation": "B_PGAI_100 = clip(50 + 15 * (0.40*Z_BCE + 0.30*Z_BCR + 0.30*Z_BGI), 0, 100)",
-      "bce": "0.45*sh('wpa') + 0.30*sh('rs') + 0.25*sh('wae')",
-      "bcr": "0.30*Z_bounce + 0.25*Z_close + 0.25*Z_matchup - 0.20*Z_dxtras",
-      "bgi": "0.35*Z_deceive + 0.30*Z_choke + 0.20*Z_plan + 0.15*Z_role",
-      "multipliers": "M_bowl = (1 + 0.75*knockout) * (1 + 0.40*away) * (1 + 0.30*dew) * (1 + 0.35*bunny) * (1 + 0.30*set_bat) * (1 + 0.25*dls_toss)"
-    }
-  }
+  ]
 }

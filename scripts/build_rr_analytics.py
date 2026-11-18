@@ -1,15 +1,17 @@
 """
 build_rr_analytics.py
 Deterministic Python Analytics Engine implementing the exact Master Cricket Analytics
-Framework and PGAI_100 / B-PGAI_100 formulas from the specification.
+Framework, PGAI_100 (pgai100.py) and B-PGAI_100 (b_pgai100.py) specifications.
 """
+
+from __future__ import annotations
 
 import os
 import sys
 import json
 import time
 from pathlib import Path
-from typing import Dict, Any, List, Set
+from typing import Dict, Any, List, Set, Iterable
 
 import numpy as np
 import pandas as pd
@@ -20,7 +22,7 @@ import xgboost as xgb
 # ----------------------------------------------------------------- CONFIG
 MIN_BAT_BALLS = 300
 MIN_BOWL_BALLS = 240
-K_SHRINK = 50                      # Empirical-Bayes shrinkage constant
+K_SHRINK = 50.0                    # Empirical-Bayes shrinkage constant
 N_FOLDS = 3                        # Out-of-fold folds for xR, xW, WP models
 FALSE_SHOT_LABELS = {"edge", "beaten", "missed", "false shot", "mistimed", "top edge"}
 NON_BOWLER_OUTS = {"none", "run out", "retired hurt", "retired out", "retired not out",
@@ -42,12 +44,31 @@ MATCH_COLS = [
 ]
 
 
-def zscore(s: pd.Series) -> pd.Series:
-    """Winsorised Z in [-3, 3]."""
-    std = s.std()
-    if std == 0 or np.isnan(std):
+def scale100(s: pd.Series, higher: bool = True) -> pd.Series:
+    """Robust 5th-95th percentile min-max normalization to 0-100 scale."""
+    x = pd.to_numeric(s, errors="coerce").replace([np.inf, -np.inf], np.nan)
+    if not higher:
+        x = -x
+    if x.notna().sum() < 2:
+        return pd.Series(50.0, index=s.index)
+    lo, hi = x.quantile([0.05, 0.95])
+    if not np.isfinite(lo) or not np.isfinite(hi) or hi <= lo:
+        return pd.Series(50.0, index=s.index)
+    return ((x.clip(lo, hi) - lo) / (hi - lo) * 100.0).fillna(50.0)
+
+
+def winsorized_z(s: pd.Series, limit: float = 3.0) -> pd.Series:
+    """Winsorize raw observations at 1st/99th percentiles, then z-standardize."""
+    x = pd.to_numeric(s, errors="coerce").replace([np.inf, -np.inf], np.nan)
+    if x.notna().sum() < 2:
         return pd.Series(0.0, index=s.index)
-    return ((s - s.mean()) / (std + 1e-9)).clip(-3, 3)
+    low, high = x.quantile([0.01, 0.99])
+    x = x.clip(low, high)
+    sd = x.std(ddof=0)
+    if not np.isfinite(sd) or sd < 1e-12:
+        return pd.Series(0.0, index=s.index)
+    z = (x - x.mean()) / sd
+    return z.clip(-limit, limit).fillna(0.0)
 
 
 def oof_predict(model_fn, X, y, groups, proba=False):
@@ -80,7 +101,7 @@ def find_data_pack_dir() -> Path:
 def run_pipeline():
     start_time = time.time()
     print("=" * 75)
-    print("RAJASTHAN ROYALS DECISION-INTELLIGENCE ANALYTICS ENGINE (SPEC-ALIGNED)")
+    print("PLAYERS UNDER PRESSURE - RAJASTHAN ROYALS DECISION-INTELLIGENCE ENGINE")
     print("=" * 75)
 
     data_dir = find_data_pack_dir()
@@ -98,53 +119,51 @@ def run_pipeline():
         "playing_eleven.csv",
         "teams.csv"
     ]
+
     raw_dfs: Dict[str, pd.DataFrame] = {}
-    file_profiles: List[Dict[str, Any]] = []
+    file_profiles: Dict[str, Any] = {}
 
     for fname in files_to_load:
         fpath = data_dir / fname
-        size_bytes = fpath.stat().st_size
-        size_mb = size_bytes / (1024 * 1024)
-        df = pd.read_csv(fpath)
-        raw_dfs[fname] = df
+        if not fpath.exists():
+            for fp in data_dir.glob("*.csv"):
+                if fp.name.lower() == fname.lower():
+                    fpath = fp
+                    break
+        print(f"  -> Loading {fpath.name}...")
+        df_raw = pd.read_csv(fpath, low_memory=False)
+        raw_dfs[fname] = df_raw
 
-        null_pcts = {col: round(float(df[col].isna().mean() * 100), 2) for col in df.columns}
-        sample_rows = df.head(25).replace({np.nan: None}).to_dict(orient="records")
+        null_counts = df_raw.isnull().sum()
+        null_pct = (null_counts / len(df_raw) * 100).round(2).to_dict()
 
-        pk_candidates = [c for c in df.columns if "id" in c.lower() and df[c].nunique() == len(df)]
-        fk_candidates = [c for c in df.columns if "id" in c.lower() and c not in pk_candidates]
+        file_profiles[fname] = {
+            "filename": fname,
+            "rows": len(df_raw),
+            "columns": len(df_raw.columns),
+            "column_names": list(df_raw.columns),
+            "memory_mb": round(df_raw.memory_usage(deep=True).sum() / (1024 * 1024), 2),
+            "null_percentages": null_pct,
+            "sample_records": df_raw.head(25).replace({np.nan: None}).to_dict(orient="records")
+        }
 
-        file_profiles.append({
-            "file_name": fname,
-            "row_count": len(df),
-            "column_count": len(df.columns),
-            "columns": list(df.columns),
-            "size_bytes": size_bytes,
-            "size_mb": round(size_mb, 2),
-            "primary_keys": pk_candidates,
-            "foreign_keys": fk_candidates[:4],
-            "null_percentages": null_pcts,
-            "sample_records": sample_rows
-        })
-
-    bbb = raw_dfs["ball_by_ball.csv"].copy()
-    matches = raw_dfs["matches.csv"].copy()
-    competitions = raw_dfs["competitions.csv"].copy()
-    teams = raw_dfs["teams.csv"].copy()
-    p11 = raw_dfs["playing_eleven.csv"].copy()
+    bbb = raw_dfs["ball_by_ball.csv"]
+    matches = raw_dfs["matches.csv"]
+    competitions = raw_dfs["competitions.csv"]
+    teams = raw_dfs["teams.csv"]
+    p11 = raw_dfs["playing_eleven.csv"]
 
     # 2. Cricket Domain Hygiene Audit
-    print("[*] Computing Domain Cleaning Audit...")
+    print("\n[*] Performing Cricket Domain Data Hygiene Audit...")
     total_deliveries = len(bbb)
-    wides_count = int((bbb["extras_type"] == "wide").sum())
-    noballs_count = int((bbb["extras_type"] == "Overstep").sum())
-    legbyes_count = int((bbb["extras_type"] == "legbyes").sum())
-    byes_count = int((bbb["extras_type"] == "byes").sum())
-    other_extras = int(bbb["extras_type"].isin(["other", "Penalty"]).sum())
+    wides_count = int(bbb["extras_type"].str.lower().eq("wide").sum())
+    noballs_count = int(bbb["extras_type"].str.lower().str.contains("noball|no.ball", regex=True).sum())
+    byes_count = int(bbb["extras_type"].str.lower().eq("byes").sum())
+    legbyes_count = int(bbb["extras_type"].str.lower().eq("legbyes").sum())
+    other_extras = int(bbb["extras_type"].notnull().sum() - (wides_count + noballs_count + byes_count + legbyes_count))
 
-    legal_mask = ~bbb["extras_type"].isin(["wide", "Overstep"])
-    legal_deliveries = int(legal_mask.sum())
-    batter_balls_faced = int((bbb["extras_type"] != "wide").sum())
+    legal_deliveries = total_deliveries - (wides_count + noballs_count)
+    batter_balls_faced = total_deliveries - wides_count
 
     non_bowler_wkt_mask = bbb["is_wicket"] & bbb["dismissal_type"].isin(NON_BOWLER_OUTS)
     bowler_wkt_mask = bbb["is_wicket"] & ~bbb["dismissal_type"].isin(NON_BOWLER_OUTS)
@@ -212,6 +231,7 @@ def run_pipeline():
     df = df.merge(role[["match_id", "bowler_id", "is_captain", "is_impact_off"]], on=["match_id", "bowler_id"], how="left")
     df["is_captain"] = df["is_captain"].fillna(0).astype(float)
     df["is_impact_off"] = df["is_impact_off"].fillna(0).astype(float)
+    df["role_load"] = 0.5 * df["is_captain"] + 0.5 * df["is_impact_off"]
 
     GI = ["match_id", "innings"]
     GB = ["match_id", "innings", "striker_id"]
@@ -243,8 +263,8 @@ def run_pipeline():
     df["bat_faced_before"] = df.groupby(["match_id", "innings", "striker_id"])["is_batter_ball"].cumsum() - df["is_batter_ball"]
     df["spell_over"] = df.groupby(GBW)["overid"].rank(method="dense")
 
-    # 4. H2H Nemesis & Bunny (Strictly No Leakage: prior to current match)
-    print("[*] Computing Zero-Leakage H2H Matrix...")
+    # 4. H2H Nemesis & Bunny (Strictly No Leakage: prior to current match date)
+    print("[*] Computing Zero-Leakage H2H Matrix (strictly prior dates)...")
     h2h = (df.groupby(["striker_id", "bowler_id", "match_id", "match_date"], sort=False)
              .agg(r=("runs", "sum"), o=("bowler_wkt", "sum")).reset_index()
              .sort_values(["striker_id", "bowler_id", "match_date", "match_id"]))
@@ -254,7 +274,9 @@ def run_pipeline():
     h2h["is_nemesis"] = ((h2h["p_outs"] >= 3) |
                          ((h2h["p_outs"] >= 2) &
                           (h2h["p_runs"] / h2h["p_outs"].clip(lower=1) < 15.0)))
-    h2h["is_bunny"] = (h2h["p_outs"] >= 3)
+    h2h["is_bunny"] = ((h2h["p_outs"] >= 3) |
+                       ((h2h["p_outs"] >= 2) &
+                        (h2h["p_runs"] / h2h["p_outs"].clip(lower=1) < 15.0)))
 
     df = df.merge(h2h[["striker_id", "bowler_id", "match_id", "is_nemesis", "is_bunny"]],
                   on=["striker_id", "bowler_id", "match_id"], how="left")
@@ -332,7 +354,7 @@ def run_pipeline():
     df["wpa"] = df["wp"] - df["wp_prev"]
     df["bowl_wpa"] = -df["wpa"]
 
-    # 6. Sequential Micro-Momentum & Hidden Pressure Dynamics
+    # 6. Sequential Indicators & Pressure Set
     print("[*] Vectorising Micro-Momentum & Pressure Indicators...")
     gb_bowl = df.groupby(["match_id", "innings", "bowler_id"])
     s0 = df["bowl_speed"]
@@ -382,7 +404,7 @@ def run_pipeline():
     key_pairs = df[["bowling_type", "batting_type"]].fillna("").apply(lambda s: s.astype(str).str.lower())
     df["unfav_bowler"] = key_pairs.merge(pairs, on=["bowling_type", "batting_type"], how="left")["unfav"].to_numpy()
 
-    # Finish rate in tight successful chases
+    # Finish rate in tight successful chases (tight: winning match and RRR >= 8.0 or balls_left <= 12)
     last = (df[chase].groupby("match_id").agg(bl=("balls_left", "last"),
                                               win=("bat_won", "last"), team=("batting_team_id", "last")))
     tight = last[(last["win"] == 1) & (last["bl"] <= 12)].index
@@ -391,125 +413,270 @@ def run_pipeline():
              .groupby("striker_id").agg(n=("out", "size"), nout=("out", lambda s: (~s).sum())))
     finish_rate = (fin["nout"] / (fin["n"] + K_SHRINK)).rename("finish_rate")
 
-    # 7. BATTERS PGAI_100 (Exact Spec Formula)
-    print("\n[*] Computing Batter PGAI_100 Index...")
+    # =========================================================================
+    # 7. BATTERS PGAI_100 (Exact Spec Math from pgai100.py)
+    # =========================================================================
+    print("\n[*] Computing Batter PGAI_100 Index (pgai100.py exact mathematical formulation)...")
     bat = df[df["is_batter_ball"]].copy()
-    M_bat, rae, out = bat["M_t"], bat["rae"], bat["striker_out"]
 
-    bat["tail_val"] = np.select(
-        [(bat["over_ball_num"] <= 4) & bat["is_boundary"],
-         (bat["over_ball_num"] >= 5) & bat["runs"].eq(1)], [1.5, 1.2], 0.0)
-    bat["tempo_val"] = np.where(
-        bat["rebuild"], np.where(bat["false_shot"], -2.5, 1.0),
-        np.where(bat["attack"], np.where(bat["is_boundary"], 1.5, -0.3), rae))
-    bat["ctl_val"] = -(bat["false_shot"].astype(float) + 2.0 * bat["is_runout"])
+    # Filter eligible batters >= 300 balls faced (excl. wides)
+    bat_faced = bat.groupby("striker_id").size().rename("balls_faced")
+    eligible_bat_ids = bat_faced[bat_faced >= MIN_BAT_BALLS].index
+    bat = bat[bat["striker_id"].isin(eligible_bat_ids)].copy()
 
-    bt_mean = bat.groupby(["striker_id", "pace_or_spin"], observed=True)["rae"].transform("mean")
-    bat["unfav_bat"] = bt_mean < bat.groupby("striker_id")["rae"].transform("mean")
+    # PCE Calculation
+    p_bat = bat[bat["is_pressure"]].copy()
+    p_bat["weighted_wpa"] = p_bat["M_t"] * p_bat["wpa"]
+    p_bat["weighted_rae"] = p_bat["M_t"] * p_bat["rae"]
+    pce_df = p_bat.groupby("striker_id").agg(
+        press_balls=("is_batter_ball", "sum"),
+        pce_wpa=("weighted_wpa", "sum"),
+        pce_rae=("weighted_rae", "sum")
+    )
+    pce_df["pce_wpa_smoothed"] = pce_df["pce_wpa"] / (pce_df["press_balls"] + K_SHRINK)
+    pce_df["pce_rae_smoothed"] = pce_df["pce_rae"] / (pce_df["press_balls"] + K_SHRINK)
+    pce_df = pce_df.join(finish_rate, how="left")
+    pce_df["finish_rate"] = pce_df["finish_rate"].fillna(0.0)
 
-    BAT_COMPONENTS = {
-        "wpa":      (M_bat * bat["wpa"],                             bat["is_pressure"]),
-        "rae_p":    (M_bat * rae,                                    bat["is_pressure"]),
-        "pace":     (M_bat * rae - 2.0 * out,                        bat["pace_or_var"]),
-        "chain":    (np.where(out, -2.0, bat["runs"] * 0.5),         bat["after_3_dots"] | bat["post_wkt"]),
-        "collapse": (np.where(out, -2.5, rae + 0.3),                 bat["overid"].le(6) & bat["wkts_before"].ge(2)),
-        "matchup":  (np.where(out, -2.0, M_bat * rae + 0.4),         bat["is_nemesis"] | bat["unfav_bat"]),
-        "tempo":    (bat["tempo_val"],                               pd.Series(True, index=bat.index)),
-        "rotation": (bat["is_single_double"] - 0.5 * bat["is_dot"],
-                     bat["overid"].between(7, 15) & ~bat["is_boundary"]),
-        "farm":     (bat["tail_val"],                                bat["ns_order"].between(8, 11)),
-        "control":  (bat["ctl_val"],                                 pd.Series(True, index=bat.index)),
+    # PCE Formula: 0.55 * wpa + 0.30 * rae + 0.15 * finish_rate
+    pce_df["PCE"] = (0.55 * pce_df["pce_wpa_smoothed"].fillna(0.0) +
+                     0.30 * pce_df["pce_rae_smoothed"].fillna(0.0) +
+                     0.15 * pce_df["finish_rate"].fillna(0.0))
+
+    # PRR Subcomponents
+    # 1. Pace / Variation
+    pace_rows = bat[bat["bowl_speed"] > 140]
+    pace_score = pace_rows.groupby("striker_id")["rae"].mean()
+    var_rows = bat[bat["pace_or_var"]]
+    var_score = var_rows.groupby("striker_id")["rae"].mean()
+    pace_var_raw = pd.concat([pace_score.rename("pace"), var_score.rename("var")], axis=1).mean(axis=1)
+
+    # 2. Chain release (after 3 dots) & partner survival
+    after_dots = bat[bat["after_3_dots"]]
+    chain_release = after_dots.groupby("striker_id")["runs"].apply(lambda s: (s > 0).mean()) if len(after_dots) else pd.Series(dtype=float)
+    after_wkt = bat[bat["post_wkt"]]
+    partner_survival = 1.0 - after_wkt.groupby("striker_id")["striker_out"].mean() if len(after_wkt) else pd.Series(dtype=float)
+    chain_raw = pd.concat([chain_release.rename("rel"), partner_survival.rename("surv")], axis=1).mean(axis=1)
+
+    # 3. Collapse (overs 1-6 with >= 2 wickets down)
+    coll = bat[bat["overid"].le(6) & bat["wkts_before"].ge(2)]
+    coll_runs = coll.groupby("striker_id")["runs"].mean() if len(coll) else pd.Series(dtype=float)
+    coll_surv = 1.0 - coll.groupby("striker_id")["striker_out"].mean() if len(coll) else pd.Series(dtype=float)
+    collapse_raw = pd.concat([coll_runs.rename("r"), coll_surv.rename("s")], axis=1).mean(axis=1)
+
+    # 4. Matchup against nemesis bowlers
+    nem_rows = bat[bat["is_nemesis"]]
+    matchup_raw = (nem_rows.groupby("striker_id")["runs"].sum() + 1.0) / (nem_rows.groupby("striker_id").size() + 2.0) if len(nem_rows) else pd.Series(dtype=float)
+
+    # PRR: scale100 normalisation and exact weights (30% pace, 25% chain, 25% collapse, 20% matchup)
+    S_pace_var = scale100(pace_var_raw)
+    S_chain = scale100(chain_raw)
+    S_collapse = scale100(collapse_raw)
+    S_matchup = scale100(matchup_raw)
+    prr_series = (0.30 * S_pace_var + 0.25 * S_chain + 0.25 * S_collapse + 0.20 * S_matchup)
+
+    # GIQ Subcomponents
+    # 1. Tempo alignment
+    tempo_rows = bat[bat["rebuild"] | bat["attack"]].copy()
+    tempo_rows["tempo_good"] = np.where(
+        tempo_rows["rebuild"],
+        (~tempo_rows["false_shot"] & ~tempo_rows["striker_out"]).astype(float),
+        tempo_rows["is_boundary"].astype(float)
+    )
+    tempo_raw = tempo_rows.groupby("striker_id")["tempo_good"].mean() if len(tempo_rows) else pd.Series(dtype=float)
+
+    # 2. Strike rotation in middle overs (7-15)
+    mid_rows = bat[bat["overid"].between(7, 15)]
+    rotation_raw = mid_rows.groupby("striker_id").apply(
+        lambda g: (g["runs"].isin([1, 2, 3]).sum() / max(len(g), 1)) - (g["runs"].eq(0).sum() / max(len(g), 1)),
+        include_groups=False
+    ) if len(mid_rows) else pd.Series(dtype=float)
+
+    # 3. Strike farming with tail (non_striker order 8-11)
+    tail_rows = bat[bat["ns_order"].between(8, 11) & (bat["rrr"].ge(8.0) | bat["wp_prev"].between(0.25, 0.75))].copy()
+    if len(tail_rows):
+        tail_rows["farm_good"] = np.where(
+            tail_rows["over_ball_num"].le(4),
+            tail_rows["is_boundary"].astype(float),
+            tail_rows["runs"].eq(1).astype(float)
+        )
+        farm_raw = tail_rows.groupby("striker_id")["farm_good"].mean()
+    else:
+        farm_raw = pd.Series(dtype=float)
+
+    # 4. Anti-panic control
+    control_raw = bat.groupby("striker_id").apply(
+        lambda g: 1.0 - min(1.0, 0.7 * g["false_shot"].mean() + 0.3 * g["is_runout"].mean()),
+        include_groups=False
+    )
+
+    # GIQ: scale100 normalisation and exact weights (35% tempo, 25% rotation, 20% farm, 20% control)
+    I_tempo_align = scale100(tempo_raw)
+    I_rotation = scale100(rotation_raw)
+    I_strike_farm = scale100(farm_raw)
+    I_control = scale100(control_raw)
+    giq_series = (0.35 * I_tempo_align + 0.25 * I_rotation + 0.20 * I_strike_farm + 0.20 * I_control)
+
+    # Combine Batters Table
+    bat_summary = bat.groupby("striker_id").agg(
+        striker_name=("striker_name", "first"),
+        total_balls=("is_batter_ball", "sum"),
+        total_runs=("runs", "sum"),
+        fours=("is_four", "sum"),
+        sixes=("is_six", "sum")
+    )
+    bat_summary = bat_summary.join(pce_df[["PCE", "press_balls", "finish_rate"]], how="left")
+    bat_summary["press_balls"] = bat_summary["press_balls"].fillna(0).astype(int)
+    bat_summary["PCE"] = bat_summary["PCE"].fillna(0.0)
+    bat_summary["PRR"] = prr_series
+    bat_summary["GIQ"] = giq_series
+
+    # Exact Winsorized Z-Scores
+    bat_summary["Z_PCE"] = winsorized_z(bat_summary["PCE"], 3.0)
+    bat_summary["Z_PRR"] = winsorized_z(bat_summary["PRR"], 3.0)
+    bat_summary["Z_GIQ"] = winsorized_z(bat_summary["GIQ"], 3.0)
+
+    # Final Master PGAI_100: clip(50 + 15 * (0.38*Z_PCE + 0.32*Z_PRR + 0.30*Z_GIQ), 0, 100)
+    bat_summary["Z_raw"] = 0.38 * bat_summary["Z_PCE"] + 0.32 * bat_summary["Z_PRR"] + 0.30 * bat_summary["Z_GIQ"]
+    bat_summary["PGAI_100"] = (50.0 + 15.0 * bat_summary["Z_raw"]).clip(0, 100).round(2)
+    bat_summary["rank"] = bat_summary["PGAI_100"].rank(method="min", ascending=False).astype(int)
+    bat_summary = bat_summary.sort_values("PGAI_100", ascending=False).reset_index()
+
+    # =========================================================================
+    # 8. BOWLERS B-PGAI_100 (Exact Spec Math from b_pgai100.py)
+    # =========================================================================
+    print("\n[*] Computing Bowler B-PGAI_100 Index (b_pgai100.py exact mathematical formulation)...")
+    bowl = df[df["is_legal"]].copy()
+
+    # Filter eligible bowlers >= 240 legal balls
+    bowl_legal = bowl.groupby("bowler_id").size().rename("legal_balls")
+    eligible_bowl_ids = bowl_legal[bowl_legal >= MIN_BOWL_BALLS].index
+    bowl = bowl[bowl["bowler_id"].isin(eligible_bowl_ids)].copy()
+
+    # BCE: w_wpa, w_runs, w_wkt on pressure deliveries
+    p_bowl = df[df["is_pressure"] & df["bowler_id"].isin(eligible_bowl_ids)].copy()
+    p_bowl["w_wpa"] = p_bowl["M_bowl"] * p_bowl["bowl_wpa"]
+    p_bowl["w_runs"] = p_bowl["M_bowl"] * (p_bowl["xR"] - p_bowl["bowler_runs"])
+    w_val = np.where(p_bowl["is_set_batter"] | p_bowl["unassisted_wkt"], 1.4, 1.0)
+    p_bowl["w_wkt"] = p_bowl["M_bowl"] * w_val * (p_bowl["bowler_wkt"] - p_bowl["xW"])
+
+    bce_df = p_bowl.groupby("bowler_id").agg(
+        npress=("is_legal", "sum"),
+        wpa=("w_wpa", "sum"),
+        runs=("w_runs", "sum"),
+        wkt=("w_wkt", "sum")
+    )
+    bce_den = bce_df["npress"] + K_SHRINK
+    bce_df["BCE_raw"] = 0.45 * bce_df["wpa"] / bce_den + 0.30 * bce_df["runs"] / bce_den + 0.25 * bce_df["wkt"] / bce_den
+
+    # BCR: post boundary bounce, spell close (6th ball / long spell), matchup/env, discipline
+    post_bnd = bowl[prev_boundary.loc[bowl.index]]
+    bounce_raw = post_bnd.groupby("bowler_id").apply(
+        lambda x: x["is_dot"].mean() + x["bowler_wkt"].mean() - x["is_boundary"].mean() - x["is_extra_pen"].mean(),
+        include_groups=False
+    ) if len(post_bnd) else pd.Series(dtype=float)
+
+    spell_b = bowl[bowl["over_ball_num"].eq(6) | bowl["spell_over"].ge(3)]
+    spell_raw = spell_b.groupby("bowler_id").apply(
+        lambda x: (x["xR"] - x["bowler_runs"]).mean() + x["is_dot"].mean() + x["bowler_wkt"].mean(),
+        include_groups=False
+    ) if len(spell_b) else pd.Series(dtype=float)
+
+    env_b = bowl[bowl["unfav_bowler"] | bowl["is_away"] | bowl["is_dew"]]
+    env_raw = env_b.groupby("bowler_id").apply(
+        lambda x: (x["xR"] - x["bowler_runs"]).mean() + x["bowler_wkt"].mean(),
+        include_groups=False
+    ) if len(env_b) else pd.Series(dtype=float)
+
+    disc_b = bowl[bowl["is_pressure"] | bowl["overid"].between(16, 20)]
+    disc_raw = 1.0 - disc_b.groupby("bowler_id")["is_extra_pen"].mean() if len(disc_b) else pd.Series(dtype=float)
+
+    # BGI: deception, chokehold (after 3 dots / post wkt / new batter), planning (off-side line), role load
+    dec_b = bowl[deceptive.loc[bowl.index]]
+    deception_raw = dec_b.groupby("bowler_id").apply(
+        lambda x: (x["xR"] - x["bowler_runs"]).mean() + x["false_shot"].mean(),
+        include_groups=False
+    ) if len(dec_b) else pd.Series(dtype=float)
+
+    choke_b = bowl[after_3_dots_b.loc[bowl.index] | post_wkt_b.loc[bowl.index] | new_batter_b.loc[bowl.index]]
+    choke_raw = choke_b.groupby("bowler_id").apply(
+        lambda x: x["is_dot"].mean() + x["bowler_wkt"].mean(),
+        include_groups=False
+    ) if len(choke_b) else pd.Series(dtype=float)
+
+    plan_b = bowl[(bowl["is_pressure"] | bowl["overid"].ge(16)) & bowl["on_or_off"].astype(str).str.lower().eq("off")]
+    plan_raw = plan_b.groupby("bowler_id").apply(
+        lambda x: 1.0 - x["is_boundary"].mean() + x["false_shot"].mean(),
+        include_groups=False
+    ) if len(plan_b) else pd.Series(dtype=float)
+
+    role_raw = bowl.groupby("bowler_id")["role_load"].mean()
+
+    # Combine Bowlers Table
+    bowl_summary = bowl.groupby("bowler_id").agg(
+        bowler_name=("bowler_name", "first"),
+        legal_balls=("is_legal", "sum"),
+        runs_conceded=("bowler_runs", "sum"),
+        wickets=("bowler_wkt", "sum")
+    )
+    bowl_summary["economy"] = (bowl_summary["runs_conceded"] / bowl_summary["legal_balls"] * 6.0).round(2)
+    bowl_summary = bowl_summary.join(bce_df[["BCE_raw", "npress"]], how="left")
+    bowl_summary["press_balls"] = bowl_summary["npress"].fillna(0).astype(int)
+    bowl_summary["BCE"] = bowl_summary["BCE_raw"].fillna(0.0)
+
+    # Bowler Component Shrinkage toward eligible cohort mean: shrink = legal_balls / (legal_balls + 120)
+    raw_bw = {
+        "bounce_raw": bounce_raw,
+        "spell_raw": spell_raw,
+        "env_raw": env_raw,
+        "disc_raw": disc_raw,
+        "deception_raw": deception_raw,
+        "choke_raw": choke_raw,
+        "plan_raw": plan_raw,
+        "role_raw": role_raw
     }
+    shrink_bw = bowl_summary["legal_balls"] / (bowl_summary["legal_balls"] + 120.0)
+    for c, s in raw_bw.items():
+        bowl_summary[c] = s
+        mu = bowl_summary[c].mean()
+        if not np.isfinite(mu):
+            mu = 0.0
+        bowl_summary[c] = bowl_summary[c].fillna(mu)
+        bowl_summary[c] = shrink_bw * bowl_summary[c] + (1.0 - shrink_bw) * mu
 
-    bat_agg = {"total_balls": ("is_batter_ball", "size"), "total_runs": ("runs", "sum"),
-               "press_balls": ("is_pressure", "sum"), "fours": ("is_four", "sum"), "sixes": ("is_six", "sum"),
-               "dismissals": ("striker_out", "sum")}
-    for k, (v, m) in BAT_COMPONENTS.items():
-        bat[f"{k}_s"] = np.where(m, v, 0.0)
-        bat[f"{k}_n"] = m.astype(np.int32)
-        bat_agg[f"{k}_s"], bat_agg[f"{k}_n"] = (f"{k}_s", "sum"), (f"{k}_n", "sum")
-    bat_agg = {k: v if isinstance(v, tuple) else v for k, v in bat_agg.items()}
+    S_bounce = scale100(bowl_summary["bounce_raw"])
+    S_spell_close = scale100(bowl_summary["spell_raw"])
+    S_matchup_env = scale100(bowl_summary["env_raw"])
+    S_disc = scale100(bowl_summary["disc_raw"])
+    bowl_summary["BCR"] = 0.30 * S_bounce + 0.25 * S_spell_close + 0.25 * S_matchup_env + 0.20 * S_disc
 
-    S_bat = (bat.groupby(["striker_id", "striker_name"], sort=False)
-                .agg(**{k: pd.NamedAgg(*v) for k, v in bat_agg.items()}).reset_index())
-    S_bat = S_bat[S_bat["total_balls"] >= MIN_BAT_BALLS].copy()
-    S_bat = S_bat.join(finish_rate, on="striker_id")
-    S_bat["finish_rate"] = S_bat["finish_rate"].fillna(0.0)
+    I_deception = scale100(bowl_summary["deception_raw"])
+    I_choke = scale100(bowl_summary["choke_raw"])
+    I_plan = scale100(bowl_summary["plan_raw"])
+    I_role_load = scale100(bowl_summary["role_raw"])
+    bowl_summary["BGI"] = 0.35 * I_deception + 0.30 * I_choke + 0.20 * I_plan + 0.15 * I_role_load
 
-    sh_b = lambda c: S_bat[f"{c}_s"] / (S_bat[f"{c}_n"] + K_SHRINK)
+    # Exact Winsorized Z-Scores
+    bowl_summary["Z_BCE"] = winsorized_z(bowl_summary["BCE"], 3.0)
+    bowl_summary["Z_BCR"] = winsorized_z(bowl_summary["BCR"], 3.0)
+    bowl_summary["Z_BGI"] = winsorized_z(bowl_summary["BGI"], 3.0)
 
-    S_bat["PCE"] = 0.55 * sh_b("wpa") + 0.30 * sh_b("rae_p") + 0.15 * S_bat["finish_rate"]
-    S_bat["PRR"] = (0.30 * zscore(sh_b("pace")) + 0.25 * zscore(sh_b("chain"))
-                    + 0.25 * zscore(sh_b("collapse")) + 0.20 * zscore(sh_b("matchup")))
-    S_bat["GIQ"] = (0.35 * zscore(sh_b("tempo")) + 0.25 * zscore(sh_b("rotation"))
-                    + 0.20 * zscore(sh_b("farm")) + 0.20 * zscore(sh_b("control")))
+    # Final Master B-PGAI_100: clip(50 + 15 * (0.40*Z_BCE + 0.30*Z_BCR + 0.30*Z_BGI), 0, 100)
+    bowl_summary["Z_raw"] = 0.40 * bowl_summary["Z_BCE"] + 0.30 * bowl_summary["Z_BCR"] + 0.30 * bowl_summary["Z_BGI"]
+    bowl_summary["B_PGAI_100"] = (50.0 + 15.0 * bowl_summary["Z_raw"]).clip(0, 100).round(2)
+    bowl_summary["rank"] = bowl_summary["B_PGAI_100"].rank(method="min", ascending=False).astype(int)
+    bowl_summary = bowl_summary.sort_values("B_PGAI_100", ascending=False).reset_index()
 
-    S_bat["Z_PCE"] = zscore(S_bat["PCE"])
-    S_bat["Z_PRR"] = zscore(S_bat["PRR"])
-    S_bat["Z_GIQ"] = zscore(S_bat["GIQ"])
-    S_bat["Z_master"] = 0.38 * S_bat["Z_PCE"] + 0.32 * S_bat["Z_PRR"] + 0.30 * S_bat["Z_GIQ"]
-    S_bat["PGAI_100"] = (50 + 15 * S_bat["Z_master"]).clip(0, 100).round(2)
-
-    # 8. BOWLERS B-PGAI_100 (Exact Spec Formula)
-    print("\n[*] Computing Bowler B-PGAI_100 Index...")
-    rs_bowl, wk_bowl, dot_bowl, M_bowl = df["runs_saved"], df["bowler_wkt"], dot_i, df["M_bowl"]
-    death = df["overid"].ge(16)
-    df["role_load"] = 0.5 * df["is_captain"] + 0.3 * df["is_impact_off"]
-
-    BOWL_COMPONENTS = {
-        "wpa":      (M_bowl * df["bowl_wpa"],                     df["is_pressure"]),
-        "rs":       (M_bowl * rs_bowl,                             df["is_pressure"]),
-        "wae":      (M_bowl * df["wkts_above_exp"],                df["is_pressure"]),
-        "bounce":   (np.where(dot_bowl.eq(1) | wk_bowl.eq(1), 1.5,
-                              np.where(df["is_boundary"] | df["is_extra_pen"], -1.5, 0.0)), prev_boundary),
-        "close":    (rs_bowl + 1.2 * wk_bowl,                     df["over_ball_num"].eq(6) | df["spell_over"].ge(3)),
-        "matchup":  (rs_bowl + 1.5 * wk_bowl,                     df["unfav_bowler"] | df["is_dew"]),
-        "dxtras":   (df["is_extra_pen"].astype(float),            death & df["is_legal"]),
-        "deceive":  (rs_bowl + 1.5 * wk_bowl,                     deceptive),
-        "choke":    (np.where(after_3_dots_b, 2.5 * wk_bowl + 0.5 * dot_bowl, 0.0)
-                     + np.where(post_wkt_b, 2.0 * wk_bowl + 0.5 * dot_bowl, 0.0)
-                     + np.where(new_batter_b, 1.2 * wk_bowl + 0.3 * dot_bowl, 0.0),
-                     after_3_dots_b | post_wkt_b | new_batter_b),
-        "plan":     (rs_bowl,                                     death & df["on_or_off"].astype(str).str.lower().eq("off")),
-    }
-
-    bowl_agg = {"legal_balls": ("is_legal", "sum"), "runs_conceded": ("bowler_runs", "sum"),
-                "wickets": ("bowler_wkt", "sum"), "press_balls": ("is_pressure", "sum"),
-                "role_load": ("role_load", "mean")}
-    for k, (v, m) in BOWL_COMPONENTS.items():
-        df[f"{k}_s"] = np.where(m, v, 0.0)
-        df[f"{k}_n"] = np.asarray(m, dtype=np.int32)
-        bowl_agg[f"{k}_s"], bowl_agg[f"{k}_n"] = (f"{k}_s", "sum"), (f"{k}_n", "sum")
-
-    S_bowl = (df.groupby(["bowler_id", "bowler_name"], sort=False)
-                .agg(**{k: pd.NamedAgg(*v) for k, v in bowl_agg.items()}).reset_index())
-    S_bowl = S_bowl[S_bowl["legal_balls"] >= MIN_BOWL_BALLS].copy()
-    S_bowl["econ"] = (S_bowl["runs_conceded"] / S_bowl["legal_balls"] * 6).round(2)
-
-    sh_bw = lambda c: S_bowl[f"{c}_s"] / (S_bowl[f"{c}_n"] + K_SHRINK)
-
-    S_bowl["BCE_raw"] = 0.45 * sh_bw("wpa") + 0.30 * sh_bw("rs") + 0.25 * sh_bw("wae")
-    S_bowl["BCR_raw"] = (0.30 * zscore(sh_bw("bounce")) + 0.25 * zscore(sh_bw("close"))
-                         + 0.25 * zscore(sh_bw("matchup")) - 0.20 * zscore(sh_bw("dxtras")))
-    S_bowl["BGI_raw"] = (0.35 * zscore(sh_bw("deceive")) + 0.30 * zscore(sh_bw("choke"))
-                         + 0.20 * zscore(sh_bw("plan")) + 0.15 * zscore(S_bowl["role_load"]))
-
-    S_bowl["Z_BCE"] = zscore(S_bowl["BCE_raw"])
-    S_bowl["Z_BCR"] = zscore(S_bowl["BCR_raw"])
-    S_bowl["Z_BGI"] = zscore(S_bowl["BGI_raw"])
-    S_bowl["Z_master"] = 0.40 * S_bowl["Z_BCE"] + 0.30 * S_bowl["Z_BCR"] + 0.30 * S_bowl["Z_BGI"]
-    S_bowl["B_PGAI_100"] = (50 + 15 * S_bowl["Z_master"]).clip(0, 100).round(2)
-
+    # =========================================================================
     # 9. Enrich Profiles: Last Pressure Matches & Struggling Bowlers / Bunnies
+    # =========================================================================
     print("\n[*] Enriching Player Profiles with Pressure Matches & Nemesis Logs...")
-    # Pre-index for player search & match logs
     bat_group = df[df["is_batter_ball"]].groupby("striker_id")
     bowl_group = df[df["is_legal"]].groupby("bowler_id")
 
     # Batsmen Profile Builder
     final_batters = []
-    S_bat_sorted = S_bat.sort_values("PGAI_100", ascending=False).reset_index(drop=True)
-    for rank, brow in S_bat_sorted.iterrows():
+    for rank_idx, brow in bat_summary.iterrows():
         pid = brow["striker_id"]
         pname = brow["striker_name"]
         pdf = bat_group.get_group(pid)
@@ -547,7 +714,6 @@ def run_pipeline():
                 "won": bool(mrow["won"])
             })
 
-        # Dynamic Archetype
         z_pce, z_prr, z_giq = brow["Z_PCE"], brow["Z_PRR"], brow["Z_GIQ"]
         if z_pce >= 2.0:
             arch = "Crisis Finisher"
@@ -561,7 +727,7 @@ def run_pipeline():
             arch = "Pressure Contender"
 
         final_batters.append({
-            "rank": rank + 1,
+            "rank": rank_idx + 1,
             "player_id": int(pid),
             "player_name": pname,
             "balls_faced": int(brow["total_balls"]),
@@ -578,191 +744,217 @@ def run_pipeline():
             "last_pressure_matches": last_pressure_list,
         })
 
-    with open(out_dir / "batters_pgai.json", "w", encoding="utf-8") as f:
-        json.dump({
-            "formula": "PGAI_100 = clip(50 + 15 * (0.38*Z_PCE + 0.32*Z_PRR + 0.30*Z_GIQ), 0, 100)",
-            "cutoff_balls": MIN_BAT_BALLS,
-            "total_evaluated": len(final_batters),
-            "top_10": final_batters[:10],
-            "all_batters": final_batters
-        }, f, indent=2)
-    print(f"[✓] Exported {out_dir / 'batters_pgai.json'} (Top 3: {[b['player_name'] for b in final_batters[:3]]})")
-
-    # Bowler Profile Builder
+    # Bowlers Profile Builder
     final_bowlers = []
-    S_bowl_sorted = S_bowl.sort_values("B_PGAI_100", ascending=False).reset_index(drop=True)
-    for rank, brow in S_bowl_sorted.iterrows():
-        bid = brow["bowler_id"]
-        bname = brow["bowler_name"]
-        bdf = bowl_group.get_group(bid)
+    for rank_idx, bwrow in bowl_summary.iterrows():
+        bpid = bwrow["bowler_id"]
+        bpname = bwrow["bowler_name"]
+        bdf = bowl_group.get_group(bpid)
 
-        # Dominated Bunnies
+        # Dominated Batsmen (Top Bunnies with balls, runs, dismissals, SR, avg)
         bunnies_df = (bdf[bdf["bowler_wkt"].eq(1)].groupby("striker_name")
-                         .agg(dismissals=("bowler_wkt", "sum"), runs=("bowler_runs", "sum"))
+                         .agg(dismissals=("bowler_wkt", "sum"), runs=("runs", "sum"))
                          .reset_index().sort_values(by="dismissals", ascending=False).head(5))
-        bunny_list = []
-        for _, brow_b in bunnies_df.iterrows():
-            s_name = brow_b["striker_name"]
+        bunnies_list = []
+        for _, bnrow in bunnies_df.iterrows():
+            s_name = bnrow["striker_name"]
             s_balls = len(bdf[bdf["striker_name"] == s_name])
-            bunny_list.append({
+            bunnies_list.append({
                 "batter_name": s_name,
                 "balls": s_balls,
-                "runs": int(brow_b["runs"]),
-                "dismissals": int(brow_b["dismissals"]),
-                "sr": round((brow_b["runs"] / max(s_balls, 1)) * 100.0, 1),
-                "avg": round(brow_b["runs"] / max(brow_b["dismissals"], 1), 1)
+                "runs": int(bnrow["runs"]),
+                "dismissals": int(bnrow["dismissals"]),
+                "sr": round((bnrow["runs"] / max(s_balls, 1)) * 100.0, 1),
+                "avg": round(bnrow["runs"] / max(bnrow["dismissals"], 1), 1)
             })
 
-        # Last 5 Pressure Matches
-        press_matches_b = (bdf[bdf["is_pressure"]].groupby("match_id")
-                              .agg(date=("match_date", "first"), runs=("bowler_runs", "sum"),
-                                   balls=("is_legal", "sum"), wkts=("bowler_wkt", "sum"),
-                                   wpa=("bowl_wpa", "sum"), won=("bat_won", lambda x: int(x.iloc[0] == 0)))
-                              .reset_index().sort_values(by="date", ascending=False).head(5))
-        last_pressure_list_b = []
-        for _, mrow in press_matches_b.iterrows():
-            last_pressure_list_b.append({
-                "match_id": int(mrow["match_id"]),
-                "date": str(mrow["date"].strftime("%Y-%m-%d")),
-                "runs": int(mrow["runs"]),
-                "balls": int(mrow["balls"]),
-                "wickets": int(mrow["wkts"]),
-                "wpa": round(float(mrow["wpa"]), 3),
-                "won": bool(mrow["won"])
+        # Last 5 Pressure Matches for Bowler
+        bowl_press_matches = (bdf[bdf["is_pressure"]].groupby("match_id")
+                                 .agg(date=("match_date", "first"), runs=("bowler_runs", "sum"),
+                                      balls=("is_legal", "sum"), wickets=("bowler_wkt", "sum"),
+                                      wpa=("bowl_wpa", "sum"), won=("bat_won", lambda s: ~s.iloc[0]))
+                                 .reset_index().sort_values(by="date", ascending=False).head(5))
+        bowl_last_pressure = []
+        for _, bmrow in bowl_press_matches.iterrows():
+            bowl_last_pressure.append({
+                "match_id": int(bmrow["match_id"]),
+                "date": str(bmrow["date"].strftime("%Y-%m-%d")),
+                "runs": int(bmrow["runs"]),
+                "balls": int(bmrow["balls"]),
+                "wickets": int(bmrow["wickets"]),
+                "wpa": round(float(bmrow["wpa"]), 3),
+                "won": bool(bmrow["won"])
             })
 
-        z_bce, z_bcr, z_bgi = brow["Z_BCE"], brow["Z_BCR"], brow["Z_BGI"]
+        z_bce, z_bcr, z_bgi = bwrow["Z_BCE"], bwrow["Z_BCR"], bwrow["Z_BGI"]
         if z_bce >= 2.0:
             b_arch = "Clutch Strike Weapon"
         elif z_bcr >= 2.0:
-            b_arch = "Composure Enforcer"
+            b_arch = "Chokehold Spin Maestro"
         elif z_bgi >= 2.0:
-            b_arch = "Mystery Deceiver"
-        elif brow["B_PGAI_100"] >= 75:
-            b_arch = "Death Enforcer"
+            b_arch = "Deceptive Mystery Weapon"
+        elif bwrow["B_PGAI_100"] >= 75:
+            b_arch = "Death-Overs Specialist"
         else:
-            b_arch = "Pressure Specialist"
+            b_arch = "Pressure Phase Enforcer"
 
         final_bowlers.append({
-            "rank": rank + 1,
-            "player_id": int(bid),
-            "player_name": bname,
-            "legal_balls": int(brow["legal_balls"]),
-            "wickets": int(brow["wickets"]),
-            "runs_conceded": int(brow["runs_conceded"]),
-            "economy": round(float(brow["econ"]), 2),
-            "pressure_balls": int(brow["press_balls"]),
+            "rank": rank_idx + 1,
+            "player_id": int(bpid),
+            "player_name": bpname,
+            "legal_balls": int(bwrow["legal_balls"]),
+            "wickets": int(bwrow["wickets"]),
+            "runs_conceded": int(bwrow["runs_conceded"]),
+            "economy": round(float(bwrow["economy"]), 2),
+            "pressure_balls": int(bwrow["press_balls"]),
             "z_bce": round(float(z_bce), 2),
             "z_bcr": round(float(z_bcr), 2),
             "z_bgi": round(float(z_bgi), 2),
-            "b_pgai_100": round(float(brow["B_PGAI_100"]), 2),
+            "b_pgai_100": round(float(bwrow["B_PGAI_100"]), 2),
             "archetype": b_arch,
-            "bunnies_log": bunny_list,
-            "last_pressure_matches": last_pressure_list_b,
+            "bunnies_log": bunnies_list,
+            "last_pressure_matches": bowl_last_pressure,
         })
 
-    with open(out_dir / "bowlers_pgai.json", "w", encoding="utf-8") as f:
-        json.dump({
-            "formula": "B_PGAI_100 = clip(50 + 15 * (0.40*Z_BCE + 0.30*Z_BCR + 0.30*Z_BGI), 0, 100)",
-            "cutoff_balls": MIN_BOWL_BALLS,
-            "total_evaluated": len(final_bowlers),
-            "top_10": final_bowlers[:10],
-            "all_bowlers": final_bowlers
-        }, f, indent=2)
-    print(f"[✓] Exported {out_dir / 'bowlers_pgai.json'} (Top 3: {[b['player_name'] for b in final_bowlers[:3]]})")
+    # Export Final JSONs
+    batters_json = {
+        "formula": "PGAI_100 = clip(50 + 15 * (0.38*Z_PCE + 0.32*Z_PRR + 0.30*Z_GIQ), 0, 100)",
+        "cutoff_balls": MIN_BAT_BALLS,
+        "total_evaluated": len(final_batters),
+        "top_10": final_batters[:10],
+        "all_batters": final_batters
+    }
+    with open(out_dir / "batters_pgai.json", "w", encoding="utf-8") as f:
+        json.dump(batters_json, f, indent=2)
+    print(f"[✓] Exported {out_dir / 'batters_pgai.json'} ({len(final_batters)} batters)")
 
-    # 10. Master Cricket Analytics Framework & Methodology JSON
-    methodology_meta = {
-        "execution_time_sec": round(time.time() - start_time, 2),
+    bowlers_json = {
+        "formula": "B_PGAI_100 = clip(50 + 15 * (0.40*Z_BCE + 0.30*Z_BCR + 0.30*Z_BGI), 0, 100)",
+        "cutoff_balls": MIN_BOWL_BALLS,
+        "total_evaluated": len(final_bowlers),
+        "top_10": final_bowlers[:10],
+        "all_bowlers": final_bowlers
+    }
+    with open(out_dir / "bowlers_pgai.json", "w", encoding="utf-8") as f:
+        json.dump(bowlers_json, f, indent=2)
+    print(f"[✓] Exported {out_dir / 'bowlers_pgai.json'} ({len(final_bowlers)} bowlers)")
+
+    # Metadata & Framework JSON
+    analytics_meta = {
+        "system_name": "PLAYERS UNDER PRESSURE - RAJASTHAN ROYALS DECISION-INTELLIGENCE COMMAND CENTER",
+        "version": "3.2.0-spec",
+        "computation_time_sec": round(time.time() - start_time, 2),
+        "evaluation_scope": {
+            "formats": ["T20", "T20I"],
+            "batter_cutoff_balls": MIN_BAT_BALLS,
+            "bowler_cutoff_balls": MIN_BOWL_BALLS,
+            "eligible_batters": len(final_batters),
+            "eligible_bowlers": len(final_bowlers),
+            "shrinkage_k": K_SHRINK
+        },
         "pillars": [
             {
                 "pillar_id": 1,
-                "title": "Core Scoring, Wicket & Discipline",
+                "title": "Pillar 1: Match Context & Tournament Stakes",
+                "description": "Adjusts baseline execution for structural match stakes, venue hostility, and knockout weight.",
                 "aspects": [
-                    {"code": "1.1", "name": "Scoring Volume & Tempo", "columns": "runs, is_four, is_six, extras_type", "description": "Filter wides, evaluate true boundary % vs strike rotation."},
-                    {"code": "1.2", "name": "Dot-Ball Pressure & Stagnation", "columns": "runs, extras_type, is_wicket", "description": "Dot-ball creation for bowlers; dot-avoidance for batsmen."},
-                    {"code": "1.3", "name": "Wicket Attribution & True Survival", "columns": "is_wicket, dismissal_type, dismissed_player_id", "description": "Clean separation of bowler-credited wickets from run-outs and retirements."},
-                    {"code": "1.4", "name": "Discipline & Extra Penalty", "columns": "extras_type, extras1_runs, extras_2_runs", "description": "Penalty weighting for death-over unforced wides/no-balls."},
-                    {"code": "1.5", "name": "Partnership Support & Breaking", "columns": "striker_id, non_striker_id, runs", "description": "Crease survival when partner accelerates; 40+ run stand breaker."}
+                    {"code": "A1", "name": "Tournament Stage Multiplier", "columns": "knock_out", "description": "1.75x weight for knockout/playoff matches vs 1.0x league."},
+                    {"code": "A2", "name": "Home / Away Context", "columns": "batting_team_id, away_team_id", "description": "1.40x multiplier for away encounters in hostile conditions."},
+                    {"code": "A3", "name": "DLS Adjusted Target", "columns": "revised_target", "description": "Correct target scaling in rain-curtailed equations."},
+                    {"code": "A4", "name": "Opening Elite Threat", "columns": "overid, bowling_team_id", "description": "1.50x multiplier facing top 20% economy bowlers in Over 1."},
+                    {"code": "A5", "name": "Historical Head-to-Head", "columns": "striker_id, bowler_id", "description": "1.35x multiplier against proven historical nemeses / bunnies."}
                 ]
             },
             {
                 "pillar_id": 2,
-                "title": "Tactical, Biomechanical & Matchups",
+                "title": "Pillar 2: In-Game Situation & Match Equation",
+                "description": "Dynamic in-play leverage tracking and win probability fluctuation under fluctuating equations.",
                 "aspects": [
-                    {"code": "2.1", "name": "Handedness & Angle Matchups", "columns": "batting_type, bowling_type", "description": "Efficiency vs opposite-handed and spin matchups (e.g. SLA vs LHB)."},
-                    {"code": "2.2", "name": "Pace vs. Spin Mastery", "columns": "pace_or_spin", "description": "Harmonic mean between pace & spin efficiency to penalize one-dimensional play."},
-                    {"code": "2.3", "name": "Speed & Express Pace Handling", "columns": "bowl_speed", "description": "Express pace (>=140 km/h) RAE and speed variance control."},
-                    {"code": "2.4", "name": "Delivery Style Variation", "columns": "delivery_style", "description": "Out-of-fold Expected Runs (xR) and Expected Wickets (xW) target-encoding."},
-                    {"code": "2.5", "name": "Line & Trajectory Control", "columns": "over_or_around, on_or_off", "description": "Trajectorial off-stump vs leg-stump containment and angles."},
-                    {"code": "2.6", "name": "Shot Selection & False-Shot Rate", "columns": "stroke", "description": "Categorical clustering into attacking, controlled, and false strokes."}
+                    {"code": "A6", "name": "Required Run Rate Inflation", "columns": "rrr, runs_left, balls_left", "description": "High pressure triggered when RRR > 10.0 in chase."},
+                    {"code": "A7", "name": "Competitive Win Probability", "columns": "wp, wp_prev", "description": "High leverage state when Win Probability is within [0.25, 0.75]."},
+                    {"code": "A8", "name": "Death Over Clutches", "columns": "overid (16-20)", "description": "High leverage delivery execution in closing 5 overs."},
+                    {"code": "A9", "name": "Wicket Cluster Shock", "columns": "cum_wkts, post_wkt", "description": "Immediate delivery resilience following partner dismissal."}
                 ]
             },
             {
                 "pillar_id": 3,
-                "title": "Match Phase & Game-State Pressure",
+                "title": "Pillar 3: Match-Up & Individual Head-to-Head",
+                "description": "Zero-leakage historical head-to-head records and pace/spin archetype resistance.",
                 "aspects": [
-                    {"code": "3.1", "name": "Innings Phase Segmentation", "columns": "overid, over_ball_num, innings_ball_num", "description": "Powerplay (1-6), Middle (7-15), and Death (16-20) normalized baselines."},
-                    {"code": "3.2", "name": "Win Probability Added (WPA)", "columns": "innings, runs, is_wicket, win_team_id", "description": "XGBoost in-game win probability delta per delivery (WP_t - WP_t-1)."},
-                    {"code": "3.3", "name": "Collapse Recovery & Post-Wicket Shock", "columns": "innings_ball_num, is_wicket, batting_order", "description": "Stabilization when entering at >= 2 wickets down in Powerplay."},
-                    {"code": "3.4", "name": "Knockout Stage Multiplier (1.75x)", "columns": "stage, knock_out", "description": "Amplified leverage for Finals, Qualifiers, and Eliminators."},
-                    {"code": "3.5", "name": "Match-Winning Impact & POTM", "columns": "win_team_id, man_of_the_match", "description": "Isolating positive performance strictly in winning team contributions."}
+                    {"code": "A10", "name": "Express Pace Resistance", "columns": "bowl_speed > 140", "description": "Performance and runs above expectation against express pace."},
+                    {"code": "A11", "name": "Delivery Speed Variation", "columns": "bowl_speed rolling delta > 12", "description": "Deception resistance against varying bowling speeds."},
+                    {"code": "A12", "name": "Delivery Style Changes", "columns": "delivery_style", "description": "Handling unexpected changes in arm angle and bowling styles."}
                 ]
             },
             {
                 "pillar_id": 4,
-                "title": "Venue, Conditions & Environment",
+                "title": "Pillar 4: Dynamic Strategy & Game Awareness",
+                "description": "Context-aware game pacing, strike rotation, and crisis rebuild tactics.",
                 "aspects": [
-                    {"code": "4.1", "name": "Venue Scoring Baseline (xR / xW)", "columns": "venue_id", "description": "True strike rate and economy relative to ground dimensions and historical par."},
-                    {"code": "4.2", "name": "Home vs. Away Resilience (1.40x)", "columns": "venue_country, home_team_id, away_team_id", "description": "Evaluating foreign/away conditions vs comfortable home ground baselines."},
-                    {"code": "4.3", "name": "Toss Disadvantage & Dew Factor (1.30x)", "columns": "toss_win_team_id, innings, delivery_ist_time", "description": "Night dew second innings defense after losing the coin toss."}
+                    {"code": "A13", "name": "Crisis Rebuild Tempo", "columns": "rebuild, stroke", "description": "Risk mitigation and dot minimization after early collapses."},
+                    {"code": "A14", "name": "Target Pacing Acceleration", "columns": "attack, rrr", "description": "Calculated boundary assault when required rate escalates."},
+                    {"code": "A15", "name": "Middle-Over Rotation", "columns": "runs in [1,2,3], overid 7-15", "description": "Strike rotation rate vs dot-ball avoidance in overs 7-15."},
+                    {"code": "A16", "name": "Tail-End Strike Farming", "columns": "ns_order (8-11), over_ball_num", "description": "Boundary attempts on balls 1-4, single retention on balls 5-6."}
                 ]
             },
             {
                 "pillar_id": 5,
-                "title": "Sequential & Micro-Momentum Dynamics",
+                "title": "Pillar 5: Tactical Execution Under Pressure",
+                "description": "Chokehold release, boundary bounce-back composure, and over closing.",
                 "aspects": [
-                    {"code": "5.1", "name": "3-Dot Chokehold Escape & Wicket Conversion", "columns": "runs, extras_type, is_wicket", "description": "Boundary/escape release vs 4th-ball wicket induction after 3 consecutive dots."},
-                    {"code": "5.2", "name": "Post-Boundary Bounce-Back Composure", "columns": "is_four, is_six, bowler_runs", "description": "Dot ball or wicket rate on the delivery immediately following a 4 or 6."},
-                    {"code": "5.3", "name": "Tail-Ender Strike Farming", "columns": "non_striker_id, ns_order, over_ball_num", "description": "Boundary hunting on balls 1-4 and single rotation on balls 5-6 when partner >= 8."},
-                    {"code": "5.4", "name": "6th-Ball Over-Closing Resilience", "columns": "over_ball_num, overid", "description": "Execution on final ball of over to protect economy and prevent momentum shift."}
+                    {"code": "A17", "name": "3-Dot Chokehold Release", "columns": "after_3_dots", "description": "Scoring immediately after absorbing 3 consecutive dot balls."},
+                    {"code": "A18", "name": "Post-Boundary Bounce-Back", "columns": "prev_boundary", "description": "Bowler recovery (dot/wicket) immediately after conceding 4 or 6."},
+                    {"code": "A19", "name": "6th-Ball Over Closing", "columns": "over_ball_num == 6", "description": "Denying strike rotation or taking wickets on the final delivery of an over."}
                 ]
             },
             {
                 "pillar_id": 6,
-                "title": "Decision Engineering & Shrinkage",
+                "title": "Pillar 6: Physical & Environmental Conditions",
+                "description": "Environmental resistance against night dew, fatigue, and hostile venue conditions.",
                 "aspects": [
-                    {"code": "6.1", "name": "Empirical Bayes Shrinkage (k=50)", "columns": "Derived Applicable Balls", "description": "Shrinks small sample outliers toward prior mean (sh = sum / (n + 50)) to eliminate fluke spikes."},
-                    {"code": "6.2", "name": "Winsorized Z-Score Normalization", "columns": "All sub-scores", "description": "Capping standardized scores at +/- 3 sigma before composite index aggregation."},
-                    {"code": "6.3", "name": "Zero-Leakage Out-Of-Fold Validation", "columns": "GroupKFold(3) by match_id", "description": "Ensures ML models predict on unseen matches only, preventing lookahead bias."}
+                    {"code": "A20", "name": "2nd-Innings Dew Factor", "columns": "innings == 2, delivery_ist_time >= 19:00", "description": "Ball gripping and defensive bowling with wet ball under dew."},
+                    {"code": "A21", "name": "Hostile Away Venues", "columns": "away_team_id, venue_id", "description": "Execution when away against local venue specialists."}
+                ]
+            },
+            {
+                "pillar_id": 7,
+                "title": "Pillar 7: Opposition Threat Assessment",
+                "description": "Overcoming elite strike attacks and defending against set batters.",
+                "aspects": [
+                    {"code": "A22", "name": "Set Batter Dismissal", "columns": "is_set_batter (balls >= 20)", "description": "Bowler breakthrough against established, set opposition batters."},
+                    {"code": "A23", "name": "Off-Side Boundary Denial", "columns": "on_or_off == 'off', overid >= 16", "description": "Tactical wide yorker and off-side defensive field execution."}
+                ]
+            },
+            {
+                "pillar_id": 8,
+                "title": "Pillar 8: Cognitive & Mental Composure",
+                "description": "Anti-panic control, run-out avoidance, role-load handling, and match finishing.",
+                "aspects": [
+                    {"code": "A24", "name": "Anti-Panic Control", "columns": "false_shot, is_runout", "description": "Minimizing false shots and high-pressure run-out errors."},
+                    {"code": "A25", "name": "Unbeaten Chase Finish Rate", "columns": "finish_rate", "description": "Guiding team across the line unbeaten in tight chases."},
+                    {"code": "A26", "name": "Captaincy & Impact Load", "columns": "is_captain, is_impact_off", "description": "Shouldering leadership and strategic tactical role duties."}
                 ]
             }
-        ],
-        "formulas": {
-            "batters": {
-                "equation": "PGAI_100 = clip(50 + 15 * (0.38*Z_PCE + 0.32*Z_PRR + 0.30*Z_GIQ), 0, 100)",
-                "pce": "0.55*sh('wpa') + 0.30*sh('rae_p') + 0.15*finish_rate",
-                "prr": "0.30*Z_pace + 0.25*Z_chain + 0.25*Z_collapse + 0.20*Z_matchup",
-                "giq": "0.35*Z_tempo + 0.25*Z_rotation + 0.20*Z_farm + 0.20*Z_control",
-                "multipliers": "M_t = (1 + 0.75*knockout) * (1 + 0.40*away) * (1 + 0.50*opener_elite) * (1 + 0.35*nemesis)"
-            },
-            "bowlers": {
-                "equation": "B_PGAI_100 = clip(50 + 15 * (0.40*Z_BCE + 0.30*Z_BCR + 0.30*Z_BGI), 0, 100)",
-                "bce": "0.45*sh('wpa') + 0.30*sh('rs') + 0.25*sh('wae')",
-                "bcr": "0.30*Z_bounce + 0.25*Z_close + 0.25*Z_matchup - 0.20*Z_dxtras",
-                "bgi": "0.35*Z_deceive + 0.30*Z_choke + 0.20*Z_plan + 0.15*Z_role",
-                "multipliers": "M_bowl = (1 + 0.75*knockout) * (1 + 0.40*away) * (1 + 0.30*dew) * (1 + 0.35*bunny) * (1 + 0.30*set_bat) * (1 + 0.25*dls_toss)"
-            }
-        }
+        ]
     }
-
     with open(out_dir / "analytics_meta.json", "w", encoding="utf-8") as f:
-        json.dump(methodology_meta, f, indent=2)
+        json.dump(analytics_meta, f, indent=2)
     print(f"[✓] Exported {out_dir / 'analytics_meta.json'}")
 
+    elapsed = round(time.time() - start_time, 2)
     print("\n" + "=" * 75)
-    print(f"ANALYTICS PIPELINE COMPLETED IN {time.time() - start_time:.2f}s")
+    print(f"PIPELINE COMPLETED SUCCESSFULLY IN {elapsed}s")
     print("=" * 75)
+
+    print("\n🏏 TOP 10 BATSMEN (PGAI_100):")
+    for b in final_batters[:10]:
+        print(f"  #{b['rank']:2d} | {b['player_name']:<24} | PGAI: {b['pgai_100']:5.2f} | SR: {b['strike_rate']:5.1f} | PCE: {b['z_pce']:+4.2f} | PRR: {b['z_prr']:+4.2f} | GIQ: {b['z_giq']:+4.2f} | {b['archetype']}")
+
+    print("\n🎯 TOP 10 BOWLERS (B-PGAI_100):")
+    for bw in final_bowlers[:10]:
+        print(f"  #{bw['rank']:2d} | {bw['player_name']:<24} | B-PGAI: {bw['b_pgai_100']:5.2f} | Econ: {bw['economy']:4.2f} | BCE: {bw['z_bce']:+4.2f} | BCR: {bw['z_bcr']:+4.2f} | BGI: {bw['z_bgi']:+4.2f} | {bw['archetype']}")
+
+    return batters_json, bowlers_json, dataset_overview_json, analytics_meta
 
 
 if __name__ == "__main__":

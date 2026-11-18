@@ -171,7 +171,7 @@ export const SandboxView: React.FC<SandboxViewProps> = ({
             <span className="px-2.5 py-0.5 text-[10px] font-bold bg-amber-500/20 text-amber-400 border border-amber-500/30 rounded">
               INTERACTIVE RE-RANKING ENGINE
             </span>
-            <span className="text-xs font-mono text-slate-400">War Room Model Calibration</span>
+            <span className="text-xs font-mono text-slate-400">Players Under Pressure Calibration</span>
           </div>
           <h2 className="text-2xl font-black text-white mt-1 tracking-tight flex items-center space-x-2">
             <span>Rajasthan Royals Selection Sandbox</span>

@@ -164,7 +164,7 @@ export const MethodologyView: React.FC<MethodologyViewProps> = ({ meta }) => {
                 <span className="text-[10px] text-emerald-400 font-bold block mb-1">STAGE 4</span>
                 <h4 className="text-white font-bold mb-1">Shrunk Z-Score Index</h4>
                 <p className="text-[11px] text-slate-400">
-                  Applies Empirical Bayes shrinkage ($k=50$), winsorizes outliers at [-3, 3], and maps scores to the final 0–100 decision index.
+                  Applies Empirical Bayes shrinkage (k=50 for pressure events, +120 for bowler cohort shrinkage), winsorizes outliers at [-3, 3], and maps scores via clip(50 + 15·Z, 0, 100).
                 </p>
               </div>
             </div>
@@ -201,21 +201,21 @@ export const MethodologyView: React.FC<MethodologyViewProps> = ({ meta }) => {
 
               <div className="bg-[#0A1020] p-4 rounded-xl border border-slate-800">
                 <span className="text-blue-400 font-bold block mb-1">PRR (Pace & Resilience - 32%)</span>
-                <p className="text-slate-400 text-[11px] mb-2">
-                  0.30 · Z_pace + 0.25 · Z_chain + 0.25 · Z_collapse + 0.20 · Z_matchup
+                <p className="text-slate-400 text-[11px] mb-2 font-mono">
+                  0.30·S_pace_var + 0.25·S_chain + 0.25·S_collapse + 0.20·S_matchup
                 </p>
                 <div className="text-[10px] text-slate-500">
-                  Measures survival against 140+ km/h pace, 3-dot chokehold escapes, and recovery when entering at &gt;= 2 wickets down.
+                  Measures survival & RAE against 140+ km/h pace or &gt;12 km/h variation, 3-dot chokehold escapes, and recovery when entering at &gt;= 2 wickets down.
                 </div>
               </div>
 
               <div className="bg-[#0A1020] p-4 rounded-xl border border-slate-800">
                 <span className="text-amber-400 font-bold block mb-1">GIQ (Game Intelligence - 30%)</span>
-                <p className="text-slate-400 text-[11px] mb-2">
-                  0.35 · Z_tempo + 0.25 · Z_rotation + 0.20 · Z_farm + 0.20 · Z_control
+                <p className="text-slate-400 text-[11px] mb-2 font-mono">
+                  0.35·I_tempo_align + 0.25·I_rotation + 0.20·I_strike_farm + 0.20·I_control
                 </p>
                 <div className="text-[10px] text-slate-500">
-                  Evaluates middle-over strike rotation (1s and 2s), tail-ender strike farming, and low false-shot/run-out rate.
+                  Evaluates crisis rebuild vs attack tempo, middle-over strike rotation, tail-ender strike farming (1-4 boundary, 5-6 single), and anti-panic control.
                 </div>
               </div>
             </div>
@@ -251,21 +251,21 @@ export const MethodologyView: React.FC<MethodologyViewProps> = ({ meta }) => {
 
               <div className="bg-[#0A1020] p-4 rounded-xl border border-slate-800">
                 <span className="text-emerald-400 font-bold block mb-1">BCR (Composure & Resilience - 30%)</span>
-                <p className="text-slate-400 text-[11px] mb-2">
-                  0.30 · Z_bounce + 0.25 · Z_close + 0.25 · Z_matchup - 0.20 · Z_dxtras
+                <p className="text-slate-400 text-[11px] mb-2 font-mono">
+                  0.30·S_bounce + 0.25·S_spell_close + 0.25·S_matchup_env + 0.20·S_disc
                 </p>
                 <div className="text-[10px] text-slate-500">
-                  Post-boundary dot/wicket bounce-back, 6th-ball over-closing, and defense against unfavorable handedness.
+                  Post-boundary dot/wicket bounce-back, 6th-ball over-closing, night dew defense, and high-leverage extra discipline with cohort shrinkage (N+120).
                 </div>
               </div>
 
               <div className="bg-[#0A1020] p-4 rounded-xl border border-slate-800">
-                <span className="text-amber-400 font-bold block mb-1">BGI (Tactical Deception - 30%)</span>
-                <p className="text-slate-400 text-[11px] mb-2">
-                  0.35 · Z_deceive + 0.30 · Z_choke + 0.20 · Z_plan + 0.15 · Z_role
+                <span className="text-amber-400 font-bold block mb-1">BGI (Tactical Deception & Game IQ - 30%)</span>
+                <p className="text-slate-400 text-[11px] mb-2 font-mono">
+                  0.35·I_deception + 0.30·I_choke + 0.20·I_plan + 0.15·I_role_load
                 </p>
                 <div className="text-[10px] text-slate-500">
-                  Speed standard deviation (&gt;6 km/h) & angle changes, 3-dot chokeholds, wide-off death plan execution, and captaincy load.
+                  Speed deviation (&gt;6 km/h) & angle changes, 3-dot chokeholds, wide-off death line execution, and captaincy/impact role load.
                 </div>
               </div>
             </div>

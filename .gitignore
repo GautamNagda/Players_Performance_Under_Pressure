@@ -30,3 +30,6 @@ __MACOSX/
 
 # Task logs & system caches
 *.log
+
+.vercel
+.env*
