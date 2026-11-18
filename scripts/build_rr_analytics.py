@@ -13,18 +13,6 @@ import time
 from pathlib import Path
 from typing import Dict, Any, List, Set, Iterable
 
-# Ensure both project root and scripts directory are in sys.path
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
-SCRIPTS_DIR = Path(__file__).resolve().parent
-for p in (PROJECT_ROOT, SCRIPTS_DIR):
-    if str(p) not in sys.path:
-        sys.path.insert(0, str(p))
-
-try:
-    import b_pgai100
-except ImportError:
-    from scripts import b_pgai100
-
 import numpy as np
 import pandas as pd
 from sklearn.model_selection import GroupKFold
@@ -558,12 +546,126 @@ def run_pipeline():
     # 8. BOWLERS B-PGAI_100 (Exact Spec Math from b_pgai100.py)
     # =========================================================================
     print("\n[*] Computing Bowler B-PGAI_100 Index (b_pgai100.py exact mathematical formulation)...")
-    d_bowl = b_pgai100.load_data(data_dir / "ball_by_ball.csv", data_dir / "matches.csv")
-    d_bowl = b_pgai100.add_state(d_bowl)
-    d_bowl = b_pgai100.add_context(d_bowl)
-    d_bowl, bowl_models = b_pgai100.add_models(d_bowl)
-    d_bowl = b_pgai100.add_pressure(d_bowl)
-    bowl_summary = b_pgai100.score_bowlers(d_bowl, min_legal=MIN_BOWL_BALLS)
+    bowl = df[df["is_legal"]].copy()
+
+    # Filter eligible bowlers >= 240 legal balls
+    bowl_legal = bowl.groupby("bowler_id").size().rename("legal_balls")
+    eligible_bowl_ids = bowl_legal[bowl_legal >= MIN_BOWL_BALLS].index
+    bowl = bowl[bowl["bowler_id"].isin(eligible_bowl_ids)].copy()
+
+    # BCE: w_wpa, w_runs, w_wkt on pressure deliveries
+    p_bowl = df[df["is_pressure"] & df["bowler_id"].isin(eligible_bowl_ids)].copy()
+    p_bowl["w_wpa"] = p_bowl["M_bowl"] * p_bowl["bowl_wpa"]
+    p_bowl["w_runs"] = p_bowl["M_bowl"] * (p_bowl["xR"] - p_bowl["bowler_runs"])
+    w_val = np.where(p_bowl["is_set_batter"] | p_bowl["unassisted_wkt"], 1.4, 1.0)
+    p_bowl["w_wkt"] = p_bowl["M_bowl"] * w_val * (p_bowl["bowler_wkt"] - p_bowl["xW"])
+
+    bce_df = p_bowl.groupby("bowler_id").agg(
+        npress=("is_legal", "sum"),
+        wpa=("w_wpa", "sum"),
+        runs=("w_runs", "sum"),
+        wkt=("w_wkt", "sum")
+    )
+    bce_den = bce_df["npress"] + K_SHRINK
+    bce_df["BCE_raw"] = 0.45 * bce_df["wpa"] / bce_den + 0.30 * bce_df["runs"] / bce_den + 0.25 * bce_df["wkt"] / bce_den
+
+    # BCR: post boundary bounce, spell close (6th ball / long spell), matchup/env, discipline
+    post_bnd = bowl[prev_boundary.loc[bowl.index]]
+    bounce_raw = post_bnd.groupby("bowler_id").apply(
+        lambda x: x["is_dot"].mean() + x["bowler_wkt"].mean() - x["is_boundary"].mean() - x["is_extra_pen"].mean(),
+        include_groups=False
+    ) if len(post_bnd) else pd.Series(dtype=float)
+
+    spell_b = bowl[bowl["over_ball_num"].eq(6) | bowl["spell_over"].ge(3)]
+    spell_raw = spell_b.groupby("bowler_id").apply(
+        lambda x: (x["xR"] - x["bowler_runs"]).mean() + x["is_dot"].mean() + x["bowler_wkt"].mean(),
+        include_groups=False
+    ) if len(spell_b) else pd.Series(dtype=float)
+
+    env_b = bowl[bowl["unfav_bowler"] | bowl["is_away"] | bowl["is_dew"]]
+    env_raw = env_b.groupby("bowler_id").apply(
+        lambda x: (x["xR"] - x["bowler_runs"]).mean() + x["bowler_wkt"].mean(),
+        include_groups=False
+    ) if len(env_b) else pd.Series(dtype=float)
+
+    disc_b = bowl[bowl["is_pressure"] | bowl["overid"].between(16, 20)]
+    disc_raw = 1.0 - disc_b.groupby("bowler_id")["is_extra_pen"].mean() if len(disc_b) else pd.Series(dtype=float)
+
+    # BGI: deception, chokehold (after 3 dots / post wkt / new batter), planning (off-side line), role load
+    dec_b = bowl[deceptive.loc[bowl.index]]
+    deception_raw = dec_b.groupby("bowler_id").apply(
+        lambda x: (x["xR"] - x["bowler_runs"]).mean() + x["false_shot"].mean(),
+        include_groups=False
+    ) if len(dec_b) else pd.Series(dtype=float)
+
+    choke_b = bowl[after_3_dots_b.loc[bowl.index] | post_wkt_b.loc[bowl.index] | new_batter_b.loc[bowl.index]]
+    choke_raw = choke_b.groupby("bowler_id").apply(
+        lambda x: x["is_dot"].mean() + x["bowler_wkt"].mean(),
+        include_groups=False
+    ) if len(choke_b) else pd.Series(dtype=float)
+
+    plan_b = bowl[(bowl["is_pressure"] | bowl["overid"].ge(16)) & bowl["on_or_off"].astype(str).str.lower().eq("off")]
+    plan_raw = plan_b.groupby("bowler_id").apply(
+        lambda x: 1.0 - x["is_boundary"].mean() + x["false_shot"].mean(),
+        include_groups=False
+    ) if len(plan_b) else pd.Series(dtype=float)
+
+    role_raw = bowl.groupby("bowler_id")["role_load"].mean()
+
+    # Combine Bowlers Table
+    bowl_summary = bowl.groupby("bowler_id").agg(
+        bowler_name=("bowler_name", "first"),
+        legal_balls=("is_legal", "sum"),
+        runs_conceded=("bowler_runs", "sum"),
+        wickets=("bowler_wkt", "sum")
+    )
+    bowl_summary["economy"] = (bowl_summary["runs_conceded"] / bowl_summary["legal_balls"] * 6.0).round(2)
+    bowl_summary = bowl_summary.join(bce_df[["BCE_raw", "npress"]], how="left")
+    bowl_summary["press_balls"] = bowl_summary["npress"].fillna(0).astype(int)
+    bowl_summary["BCE"] = bowl_summary["BCE_raw"].fillna(0.0)
+
+    # Bowler Component Shrinkage toward eligible cohort mean: shrink = legal_balls / (legal_balls + 120)
+    raw_bw = {
+        "bounce_raw": bounce_raw,
+        "spell_raw": spell_raw,
+        "env_raw": env_raw,
+        "disc_raw": disc_raw,
+        "deception_raw": deception_raw,
+        "choke_raw": choke_raw,
+        "plan_raw": plan_raw,
+        "role_raw": role_raw
+    }
+    shrink_bw = bowl_summary["legal_balls"] / (bowl_summary["legal_balls"] + 120.0)
+    for c, s in raw_bw.items():
+        bowl_summary[c] = s
+        mu = bowl_summary[c].mean()
+        if not np.isfinite(mu):
+            mu = 0.0
+        bowl_summary[c] = bowl_summary[c].fillna(mu)
+        bowl_summary[c] = shrink_bw * bowl_summary[c] + (1.0 - shrink_bw) * mu
+
+    S_bounce = scale100(bowl_summary["bounce_raw"])
+    S_spell_close = scale100(bowl_summary["spell_raw"])
+    S_matchup_env = scale100(bowl_summary["env_raw"])
+    S_disc = scale100(bowl_summary["disc_raw"])
+    bowl_summary["BCR"] = 0.30 * S_bounce + 0.25 * S_spell_close + 0.25 * S_matchup_env + 0.20 * S_disc
+
+    I_deception = scale100(bowl_summary["deception_raw"])
+    I_choke = scale100(bowl_summary["choke_raw"])
+    I_plan = scale100(bowl_summary["plan_raw"])
+    I_role_load = scale100(bowl_summary["role_raw"])
+    bowl_summary["BGI"] = 0.35 * I_deception + 0.30 * I_choke + 0.20 * I_plan + 0.15 * I_role_load
+
+    # Exact Winsorized Z-Scores
+    bowl_summary["Z_BCE"] = winsorized_z(bowl_summary["BCE"], 3.0)
+    bowl_summary["Z_BCR"] = winsorized_z(bowl_summary["BCR"], 3.0)
+    bowl_summary["Z_BGI"] = winsorized_z(bowl_summary["BGI"], 3.0)
+
+    # Final Master B-PGAI_100: clip(50 + 15 * (0.40*Z_BCE + 0.30*Z_BCR + 0.30*Z_BGI), 0, 100)
+    bowl_summary["Z_raw"] = 0.40 * bowl_summary["Z_BCE"] + 0.30 * bowl_summary["Z_BCR"] + 0.30 * bowl_summary["Z_BGI"]
+    bowl_summary["B_PGAI_100"] = (50.0 + 15.0 * bowl_summary["Z_raw"]).clip(0, 100).round(2)
+    bowl_summary["rank"] = bowl_summary["B_PGAI_100"].rank(method="min", ascending=False).astype(int)
+    bowl_summary = bowl_summary.sort_values("B_PGAI_100", ascending=False).reset_index()
 
     # =========================================================================
     # 9. Enrich Profiles: Last Pressure Matches & Struggling Bowlers / Bunnies
@@ -574,7 +676,7 @@ def run_pipeline():
 
     # Batsmen Profile Builder
     final_batters = []
-    for rank_idx, (_, brow) in enumerate(bat_summary.iterrows(), 1):
+    for rank_idx, brow in bat_summary.iterrows():
         pid = brow["striker_id"]
         pname = brow["striker_name"]
         pdf = bat_group.get_group(pid)
@@ -625,7 +727,7 @@ def run_pipeline():
             arch = "Pressure Contender"
 
         final_batters.append({
-            "rank": rank_idx,
+            "rank": rank_idx + 1,
             "player_id": int(pid),
             "player_name": pname,
             "balls_faced": int(brow["total_balls"]),
@@ -643,51 +745,46 @@ def run_pipeline():
         })
 
     # Bowlers Profile Builder
-    bowl_group = d_bowl[d_bowl["is_legal_ball"]].groupby("bowler_id")
     final_bowlers = []
-    for rank_idx, (_, bwrow) in enumerate(bowl_summary.iterrows(), 1):
-        bpid = str(bwrow["bowler_id"])
-        bpname = bwrow.get("bowler_name", str(bpid))
+    for rank_idx, bwrow in bowl_summary.iterrows():
+        bpid = bwrow["bowler_id"]
+        bpname = bwrow["bowler_name"]
+        bdf = bowl_group.get_group(bpid)
 
         # Dominated Batsmen (Top Bunnies with balls, runs, dismissals, SR, avg)
+        bunnies_df = (bdf[bdf["bowler_wkt"].eq(1)].groupby("striker_name")
+                         .agg(dismissals=("bowler_wkt", "sum"), runs=("runs", "sum"))
+                         .reset_index().sort_values(by="dismissals", ascending=False).head(5))
         bunnies_list = []
-        if bpid in bowl_group.groups:
-            bdf = bowl_group.get_group(bpid)
-            bunnies_df = (bdf[bdf["IsBowlWkt"].eq(1)].groupby("striker_name")
-                             .agg(dismissals=("IsBowlWkt", "sum"), runs=("runs_batter", "sum"))
-                             .reset_index().sort_values(by="dismissals", ascending=False).head(5))
-            for _, bnrow in bunnies_df.iterrows():
-                s_name = bnrow["striker_name"]
-                s_balls = len(bdf[bdf["striker_name"] == s_name])
-                bunnies_list.append({
-                    "batter_name": s_name,
-                    "balls": s_balls,
-                    "runs": int(bnrow["runs"]),
-                    "dismissals": int(bnrow["dismissals"]),
-                    "sr": round((bnrow["runs"] / max(s_balls, 1)) * 100.0, 1),
-                    "avg": round(bnrow["runs"] / max(bnrow["dismissals"], 1), 1)
-                })
+        for _, bnrow in bunnies_df.iterrows():
+            s_name = bnrow["striker_name"]
+            s_balls = len(bdf[bdf["striker_name"] == s_name])
+            bunnies_list.append({
+                "batter_name": s_name,
+                "balls": s_balls,
+                "runs": int(bnrow["runs"]),
+                "dismissals": int(bnrow["dismissals"]),
+                "sr": round((bnrow["runs"] / max(s_balls, 1)) * 100.0, 1),
+                "avg": round(bnrow["runs"] / max(bnrow["dismissals"], 1), 1)
+            })
 
-            # Last 5 Pressure Matches for Bowler
-            bowl_press_matches = (bdf[bdf["is_pressure"]].groupby("match_id")
-                                     .agg(date=("match_date", "first"), runs=("BowlRuns", "sum"),
-                                          balls=("is_legal_ball", "sum"), wickets=("IsBowlWkt", "sum"),
-                                          wpa=("BowlerWPA", "sum"),
-                                          won=("batting_team_id", lambda s: str(s.iloc[0]) != str(bdf["win_team_id"].iloc[0]) if "win_team_id" in bdf and pd.notna(bdf["win_team_id"].iloc[0]) else True))
-                                     .reset_index().sort_values(by="date", ascending=False).head(5))
-            bowl_last_pressure = []
-            for _, bmrow in bowl_press_matches.iterrows():
-                bowl_last_pressure.append({
-                    "match_id": int(bmrow["match_id"]),
-                    "date": str(bmrow["date"].strftime("%Y-%m-%d")),
-                    "runs": int(bmrow["runs"]),
-                    "balls": int(bmrow["balls"]),
-                    "wickets": int(bmrow["wickets"]),
-                    "wpa": round(float(bmrow["wpa"]), 3),
-                    "won": bool(bmrow["won"])
-                })
-        else:
-            bowl_last_pressure = []
+        # Last 5 Pressure Matches for Bowler
+        bowl_press_matches = (bdf[bdf["is_pressure"]].groupby("match_id")
+                                 .agg(date=("match_date", "first"), runs=("bowler_runs", "sum"),
+                                      balls=("is_legal", "sum"), wickets=("bowler_wkt", "sum"),
+                                      wpa=("bowl_wpa", "sum"), won=("bat_won", lambda s: ~s.iloc[0]))
+                                 .reset_index().sort_values(by="date", ascending=False).head(5))
+        bowl_last_pressure = []
+        for _, bmrow in bowl_press_matches.iterrows():
+            bowl_last_pressure.append({
+                "match_id": int(bmrow["match_id"]),
+                "date": str(bmrow["date"].strftime("%Y-%m-%d")),
+                "runs": int(bmrow["runs"]),
+                "balls": int(bmrow["balls"]),
+                "wickets": int(bmrow["wickets"]),
+                "wpa": round(float(bmrow["wpa"]), 3),
+                "won": bool(bmrow["won"])
+            })
 
         z_bce, z_bcr, z_bgi = bwrow["Z_BCE"], bwrow["Z_BCR"], bwrow["Z_BGI"]
         if z_bce >= 2.0:
@@ -702,25 +799,19 @@ def run_pipeline():
             b_arch = "Pressure Phase Enforcer"
 
         final_bowlers.append({
-            "rank": rank_idx,
+            "rank": rank_idx + 1,
             "player_id": int(bpid),
             "player_name": bpname,
             "legal_balls": int(bwrow["legal_balls"]),
-            "wickets": int(bwrow["credited_wickets"]),
-            "runs_conceded": int(bwrow["total_bowler_runs"]),
+            "wickets": int(bwrow["wickets"]),
+            "runs_conceded": int(bwrow["runs_conceded"]),
             "economy": round(float(bwrow["economy"]), 2),
-            "pressure_balls": int(bwrow["pressure_balls"]),
+            "pressure_balls": int(bwrow["press_balls"]),
             "z_bce": round(float(z_bce), 2),
             "z_bcr": round(float(z_bcr), 2),
             "z_bgi": round(float(z_bgi), 2),
             "b_pgai_100": round(float(bwrow["B_PGAI_100"]), 2),
             "archetype": b_arch,
-            "rating_band": str(bwrow.get("rating_band", "Strong")),
-            "bci": round(float(bwrow.get("BCI", 50.0)), 1),
-            "bpi": round(float(bwrow.get("BPI", 50.0)), 1),
-            "consistency_score": round(float(bwrow.get("Consistency_Score", 50.0)), 1),
-            "leverage_exposure": round(float(bwrow.get("Leverage_Exposure", 0.0)) * 100.0, 1),
-            "reliability_exposure": round(float(bwrow.get("Reliability_Exposure", 50.0)), 1),
             "bunnies_log": bunnies_list,
             "last_pressure_matches": bowl_last_pressure,
         })

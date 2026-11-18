@@ -83,21 +83,21 @@ When deployed on Vercel, the Python backend in [`api/index.py`](./api/index.py) 
 
 ---
 
-### 🎯 Top 10 Pressure Bowlers (B-PGAI_100)
-> **Hard Eligibility Gate:** $\ge 240$ legal balls (40 Overs). Total evaluated: **204 bowlers**.
+### 🎯 Top 10 Pressure Bowlers (`B-PGAI_100`)
+> **Hard Eligibility Gate:** $\ge 240$ legal balls (40 Overs). Total evaluated: **203 bowlers**.
 
-| Rank | Bowler | Legal Balls | Wickets | Runs Conc. | Economy | Pressure Balls | $Z_{\text{BCE}}$ | $Z_{\text{BCR}}$ | $Z_{\text{BGI}}$ | **$\text{B-PGAI}_{100}$** | Rating Band | Tactical Archetype |
-| :---: | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :--- |
-| 🥇 **#1** | **Sufiyan Muqeem** | 519 | 41 | 530 | **6.13** | 243 | +2.35 | +2.53 | +1.50 | **82.23** | Marquee | Clutch Strike Weapon |
-| 🥈 **#2** | **Jasprit Bumrah** | 1,722 | **94** | 2,124 | 7.40 | **692** | +0.96 | +2.53 | +2.24 | **77.21** | Marquee | Chokehold Spin Maestro |
-| 🥉 **#3** | **Saim Ayub** | 511 | 28 | 612 | 7.19 | 196 | +2.35 | +1.54 | +0.91 | **75.17** | Marquee | Clutch Strike Weapon |
-| **#4** | **Abrar Ahmed** | 764 | 47 | 865 | 6.79 | 294 | +1.83 | +1.05 | +2.02 | **74.78** | Strong | Deceptive Mystery Weapon |
-| **#5** | **Mohammad Nawaz** | 1,005 | 67 | 1,199 | 7.16 | 370 | +1.86 | +1.69 | +0.79 | **72.32** | Strong | Pressure Phase Enforcer |
-| **#6** | **Abbas Afridi** | 455 | 42 | 640 | 8.44 | 99 | +1.39 | +1.52 | +1.13 | **70.28** | Strong | Pressure Phase Enforcer |
-| **#7** | **Ehsan Khan** | 323 | 20 | 393 | 7.30 | 124 | +0.07 | +2.36 | +2.04 | **70.19** | Strong | Chokehold Spin Maestro |
-| **#8** | **Shaheen Afridi** | 993 | 68 | 1,362 | 8.23 | 297 | +1.44 | +0.83 | +1.63 | **69.70** | Strong | Pressure Phase Enforcer |
-| **#9** | **Allah Ghazanfar** | 461 | 28 | 622 | 8.10 | 162 | +1.54 | +1.47 | +0.65 | **68.77** | Strong | Pressure Phase Enforcer |
-| **#10** | **Sunil Narine** | 1,535 | 68 | 1,791 | 7.00 | 535 | -0.24 | +2.53 | +1.90 | **68.46** | Strong | Chokehold Spin Maestro |
+| Rank | Bowler | Legal Balls | Wickets | Runs Conc. | Economy | Pressure Balls | $Z_{\text{BCE}}$ | $Z_{\text{BCR}}$ | $Z_{\text{BGI}}$ | **$\text{B-PGAI}_{100}$** | Tactical Archetype |
+| :---: | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :--- |
+| 🥇 **#1** | **Jasprit Bumrah** | 1,722 | **94** | 2,039 | **7.10** | 692 | +2.30 | +2.32 | +1.98 | **83.14** | Clutch Strike Weapon |
+| 🥈 **#2** | **Sufiyan Muqeem** | 519 | 41 | 524 | **6.06** | 243 | +2.30 | +2.32 | +1.54 | **81.16** | Clutch Strike Weapon |
+| 🥉 **#3** | **Abrar Ahmed** | 764 | 47 | 849 | **6.67** | 294 | +2.30 | +1.72 | +1.98 | **80.43** | Clutch Strike Weapon |
+| **#4** | **Sunil Narine** | 1,510 | 68 | 1,732 | **6.88** | 525 | +2.18 | +2.14 | +1.65 | **80.18** | Clutch Strike Weapon |
+| **#5** | **Mitchell Santner** | 1,707 | 86 | 2,085 | 7.33 | 540 | +1.98 | +1.29 | +1.97 | **76.50** | Death-Overs Specialist |
+| **#6** | **Nathan Ellis** | 904 | 63 | 1,204 | 7.99 | 332 | +2.10 | +1.86 | +0.92 | **75.11** | Clutch Strike Weapon |
+| **#7** | **Shaheen Afridi** | 967 | 66 | 1,264 | 7.84 | 285 | +1.73 | +1.58 | +1.49 | **74.18** | Pressure Phase Enforcer |
+| **#8** | **Corbin Bosch** | 370 | 35 | 522 | 8.46 | 160 | +1.39 | +2.32 | +1.03 | **73.42** | Chokehold Spin Maestro |
+| **#9** | **Abbas Afridi** | 455 | 42 | 621 | 8.19 | 99 | +1.99 | +2.08 | +0.43 | **73.26** | Chokehold Spin Maestro |
+| **#10** | **Sakib Hussain** | 253 | 16 | 374 | 8.87 | 169 | +1.42 | +1.11 | +1.88 | **71.97** | Pressure Phase Enforcer |
 
 ---
 

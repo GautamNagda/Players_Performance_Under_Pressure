@@ -116,12 +116,6 @@ export interface BowlerProfile {
   z_bgi: number;
   b_pgai_100: number;
   archetype: string;
-  rating_band?: string;
-  bci?: number;
-  bpi?: number;
-  consistency_score?: number;
-  leverage_exposure?: number;
-  reliability_exposure?: number;
   bunnies_log: BunnyLogEntry[];
   last_pressure_matches: PressureMatchLog[];
 }
