@@ -2,6 +2,7 @@
 ### *Pressure & Game-Awareness Indices (`PGAI_100` & `B-PGAI_100`)*
 **SupeRR Selector Season 2 • Official Rajasthan Royals Analytics Framework**
 
+[![Vercel Deployment](https://img.shields.io/badge/Deploy-Vercel-black?logo=vercel&logoColor=white)](https://vercel.com/)
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-blue?logo=python&logoColor=white)](https://www.python.org/)
 [![React 18](https://img.shields.io/badge/React-18.3-61DAFB?logo=react&logoColor=white)](https://react.dev/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.5-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
@@ -17,6 +18,47 @@
 Traditional T20 metrics such as **batting average**, **raw strike rate**, and **overall bowling economy** obscure situational value. A batter striking at 135 across easy group-stage matches is often prized over a finisher striking at 155 in a high-leverage chase against top-tier pace bowling.
 
 This project delivers a **full-stack Cricket Decision-Intelligence War Room** engineered for Rajasthan Royals data scientists and scouting strategists. It implements the **Master Cricket Analytics Framework (8 Pillars & 36 Aspects)**, replaces ad-hoc probability estimates with out-of-fold cross-validated Machine Learning models (`LightGBM` + `XGBoost`), enforces Empirical Bayes shrinkage ($k=50$), and calculates the **PGAI_100** (batsmen) and **B-PGAI_100** (bowlers) indices across 199,067 deliveries.
+
+It is architected for **instant unified deployment on Vercel** — serving the React 18 high-performance frontend and the Python Serverless API in a single repository.
+
+---
+
+## ☁️ Deploy to Vercel (Frontend + Backend in One Go)
+
+This repository is pre-configured with [`vercel.json`](./vercel.json) and [`api/index.py`](./api/index.py) to deploy both the **Vite React Frontend** and the **Python Serverless Backend** simultaneously with **zero manual configuration**.
+
+### Option A: 1-Click Deployment via Vercel Dashboard
+1. Go to [vercel.com](https://vercel.com/) and click **"Add New..." > "Project"**.
+2. Select your imported GitHub repository: `GautamNagda/Players_Performance_Under_Pressure`.
+3. Vercel automatically detects the configuration from `vercel.json`:
+   - **Framework Preset:** `Vite`
+   - **Build Command:** `npm run build`
+   - **Output Directory:** `dist`
+4. *(Optional)* Add any custom environment variables (defaults from `.env.example` are pre-set).
+5. Click **"Deploy"**. Vercel will build the frontend assets and deploy the Python Serverless API in under 45 seconds!
+
+### Option B: Deploy using Vercel CLI
+```bash
+# Install Vercel CLI globally
+npm i -g vercel
+
+# Deploy directly from terminal
+vercel --prod
+```
+
+### 🔌 Live Python Serverless API Endpoints on Vercel
+When deployed on Vercel, the Python backend in [`api/index.py`](./api/index.py) automatically handles the following routes:
+
+| Method | Endpoint | Description |
+| :---: | :--- | :--- |
+| `GET` | `/api/health` | Health check, service status, and loaded models metadata |
+| `GET` | `/api/top10` | Top 10 Batsmen & Top 10 Bowlers combined payload |
+| `GET` | `/api/batters` | All 171 eligible batters (supports `?q={name}`) |
+| `GET` | `/api/bowlers` | All 203 eligible bowlers (supports `?q={name}`) |
+| `GET` | `/api/search?q={query}` | Real-time search across batters and bowlers |
+| `GET` | `/api/meta` | Master Framework metadata: 8 Pillars & 36 Aspects |
+| `GET` | `/api/overview` | CSV schemas, row counts, memory footprint, and hygiene audit |
+| `POST`| `/api/simulate` | Dynamic simulation with custom weights (`w1`, `w2`, `w3`) |
 
 ---
 
@@ -89,8 +131,6 @@ Raw scores across the three core pillars are standardized as Z-scores, winsorize
 
 ## 🏛️ Master Cricket Analytics Framework (8 Pillars & 36 Aspects)
 
-The engine comprehensively operationalizes the 8 foundational pillars across all 77 columns:
-
 1. **Pillar 1: Match Context & Tournament Stakes (Aspects 1–5)**
    - Knockout multiplier ($1.75\times$), home/away penalty ($1.40\times$), DLS revised target scaling, playoff qualification margin, and hostile crowd leverage.
 2. **Pillar 2: In-Game Situation & Match Equation (Aspects 6–10)**
@@ -113,13 +153,14 @@ The engine comprehensively operationalizes the 8 foundational pillars across all
 ## 💻 Tech Stack & Architecture
 
 - **Backend & ML Pipeline:** Python 3.10+, Pandas, NumPy, Scikit-Learn, LightGBM, XGBoost.
+- **Serverless API Engine:** Python 3.10 runtime on Vercel Edge (`api/index.py`).
 - **Frontend Architecture:** React 18, TypeScript, Vite, Tailwind CSS, Lucide React.
 - **Data Visualizations:** Recharts (5-axis Radar Charts, Stacked Pillar Bar Charts, Economy vs. Wickets Scatter Charts, Chronological WPA Trendlines).
 - **Design System:** Rajasthan Royals Analytics Command Center (`#080D1A` dark background, Royal Pink `#EA1A85`, Royal Blue `#2563EB`, Amber Gold `#F59E0B`, Emerald `#10B981`).
 
 ---
 
-## 🚀 Quickstart & Reproduction Guide
+## 🚀 Local Quickstart & Reproduction Guide
 
 ### 1. Clone the Repository
 ```bash
@@ -127,10 +168,10 @@ git clone https://github.com/GautamNagda/Players_Performance_Under_Pressure.git
 cd Players_Performance_Under_Pressure
 ```
 
-### 2. Set Up Python Pipeline
+### 2. Set Up Python Analytics Engine (Optional for ML Retraining)
 ```bash
-# Install Python dependencies
-pip install pandas numpy scikit-learn lightgbm xgboost
+# Install local ML pipeline dependencies
+pip install -r requirements-ml.txt
 
 # Execute analytics pipeline (runs in ~18 seconds)
 python main.py
@@ -159,12 +200,12 @@ Open **[http://localhost:3000](http://localhost:3000)** in your browser.
 ## ⚙️ Environment Configuration (`.env`)
 
 ```env
-# Rajasthan Royals Decision-Intelligence Command Center Configuration
+# Vercel & Production Host Configuration
 VITE_APP_TITLE="Rajasthan Royals Pressure Intelligence War Room"
-VITE_PORT=3000
-VITE_HOST=0.0.0.0
+VITE_API_BASE_URL=""
+PORT=3000
 
-# Analytics Engine Configuration
+# Analytics Engine Configuration (Local ML Retraining)
 DATA_PACK_DIR="./Data Pack"
 OUTPUT_DATA_DIR="./public/data"
 MATCH_FORMATS="T20,T20I"
@@ -179,6 +220,11 @@ CV_FOLDS=3
 ## 📂 Project Structure
 
 ```
+├── vercel.json                                # Unified Vercel deployment configuration
+├── api/
+│   └── index.py                               # Python Serverless API for Vercel
+├── requirements.txt                           # Lightweight dependencies for Vercel
+├── requirements-ml.txt                        # Full ML training stack (local execution)
 ├── .env                                       # Environment configuration
 ├── .env.example                               # Example environment template
 ├── .gitignore                                 # Git ignore patterns

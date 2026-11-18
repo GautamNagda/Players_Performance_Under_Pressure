@@ -1,0 +1,4 @@
+# Lightweight dependencies for Vercel Serverless Function deployment
+# Note: The api/index.py serverless backend uses Python standard libraries (http.server, json, pathlib)
+# For local ML pipeline retraining, see requirements-ml.txt
+requests>=2.31.0
