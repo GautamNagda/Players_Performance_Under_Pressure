@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { 
   Database, 
   FileSpreadsheet, 
@@ -18,8 +18,32 @@ interface DatasetExplorerViewProps {
 }
 
 export const DatasetExplorerView: React.FC<DatasetExplorerViewProps> = ({ data }) => {
-  const { kpis, domain_cleaning_audit: audit, tables } = data;
-  const [selectedTable, setSelectedTable] = useState<string>(tables[0]?.file_name || 'ball_by_ball.csv');
+  const kpis = data?.kpis || {} as any;
+  const audit = data?.domain_cleaning_audit || {} as any;
+
+  // Defensively normalize tables whether backend returned array or dictionary
+  const tables: TableProfile[] = useMemo(() => {
+    const rawList: any[] = Array.isArray(data?.tables)
+      ? data.tables
+      : typeof data?.tables === 'object' && data?.tables !== null
+      ? Object.values(data.tables)
+      : [];
+
+    return rawList.map((tbl: any) => ({
+      file_name: tbl.file_name || tbl.filename || 'unknown.csv',
+      row_count: tbl.row_count ?? tbl.rows ?? 0,
+      column_count: tbl.column_count ?? (Array.isArray(tbl.columns) ? tbl.columns.length : tbl.columns) ?? (tbl.column_names?.length || 0),
+      columns: Array.isArray(tbl.columns) ? tbl.columns : (tbl.column_names || []),
+      size_bytes: tbl.size_bytes || 0,
+      size_mb: tbl.size_mb ?? tbl.memory_mb ?? 0,
+      primary_keys: tbl.primary_keys || [],
+      foreign_keys: tbl.foreign_keys || [],
+      null_percentages: tbl.null_percentages || {},
+      sample_records: tbl.sample_records || [],
+    }));
+  }, [data]);
+
+  const [selectedTable, setSelectedTable] = useState<string>(() => tables[0]?.file_name || 'ball_by_ball.csv');
   const [columnSearch, setColumnSearch] = useState<string>('');
   const [page, setPage] = useState<number>(0);
   const rowsPerPage = 5;
@@ -27,16 +51,17 @@ export const DatasetExplorerView: React.FC<DatasetExplorerViewProps> = ({ data }
   const currentTableProfile = tables.find((t) => t.file_name === selectedTable) || tables[0];
 
   // Filter columns in sample records if user searches
-  const filteredColumns = currentTableProfile?.columns.filter((c) =>
-    c.toLowerCase().includes(columnSearch.toLowerCase())
-  ) || [];
+  const filteredColumns = (currentTableProfile?.columns || []).filter((c) =>
+    typeof c === 'string' && c.toLowerCase().includes(columnSearch.toLowerCase())
+  );
 
-  const paginatedRows = currentTableProfile?.sample_records.slice(
+  const sampleRows = currentTableProfile?.sample_records || [];
+  const paginatedRows = sampleRows.slice(
     page * rowsPerPage,
     (page + 1) * rowsPerPage
-  ) || [];
+  );
 
-  const totalPages = Math.ceil((currentTableProfile?.sample_records.length || 0) / rowsPerPage);
+  const totalPages = Math.max(1, Math.ceil(sampleRows.length / rowsPerPage));
 
   return (
     <div className="space-y-6 pb-12">
@@ -340,19 +365,15 @@ export const DatasetExplorerView: React.FC<DatasetExplorerViewProps> = ({ data }
             <div className="space-y-2 font-mono-stats text-xs">
               <div className="flex justify-between">
                 <span className="text-slate-400">Total Wickets in BBB:</span>
-                <span className="text-white font-bold">{audit.total_wickets.toLocaleString()}</span>
+                <span className="text-white font-bold">{(audit.total_wickets || 0).toLocaleString()}</span>
               </div>
               <div className="flex justify-between text-rose-400">
-                <span>(-) Run Outs Excluded:</span>
-                <span>-600</span>
-              </div>
-              <div className="flex justify-between text-rose-400">
-                <span>(-) Retired / Obstr:</span>
-                <span>-9</span>
+                <span>(-) Non-Bowler Wickets:</span>
+                <span>-{(audit.non_bowler_wickets_excluded || 0).toLocaleString()}</span>
               </div>
               <div className="pt-2 border-t border-slate-800 flex justify-between text-emerald-400 font-bold">
                 <span>(=) Bowler Wickets:</span>
-                <span>{audit.bowler_credited_wickets.toLocaleString()}</span>
+                <span>{(audit.bowler_credited_wickets || 0).toLocaleString()}</span>
               </div>
             </div>
           </div>

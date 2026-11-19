@@ -140,8 +140,35 @@ def run_pipeline():
         "teams.csv"
     ]
 
+    table_key_metadata = {
+        "ball_by_ball.csv": {
+            "primary_keys": ["match_id", "innings", "innings_ball_num"],
+            "foreign_keys": ["match_id", "striker_id", "non_striker_id", "bowler_id", "batting_team_id", "bowling_team_id"]
+        },
+        "matches.csv": {
+            "primary_keys": ["match_id"],
+            "foreign_keys": ["comp_id", "venue_id", "home_team_id", "away_team_id", "toss_win_team_id", "win_team_id"]
+        },
+        "competitions.csv": {
+            "primary_keys": ["comp_id"],
+            "foreign_keys": []
+        },
+        "teams.csv": {
+            "primary_keys": ["team_id"],
+            "foreign_keys": []
+        },
+        "playing_eleven.csv": {
+            "primary_keys": ["match_id", "player_id"],
+            "foreign_keys": ["match_id", "team_id", "player_id"]
+        },
+        "competition_team_player_mapping.csv": {
+            "primary_keys": ["comp_id", "team_id", "player_id"],
+            "foreign_keys": ["comp_id", "team_id", "player_id"]
+        }
+    }
+
     raw_dfs: Dict[str, pd.DataFrame] = {}
-    file_profiles: Dict[str, Any] = {}
+    table_profiles: List[Dict[str, Any]] = []
 
     for fname in files_to_load:
         fpath = data_dir / fname
@@ -156,16 +183,25 @@ def run_pipeline():
 
         null_counts = df_raw.isnull().sum()
         null_pct = (null_counts / len(df_raw) * 100).round(2).to_dict()
+        file_size_bytes = fpath.stat().st_size if fpath.exists() else int(df_raw.memory_usage(deep=True).sum())
+        meta_keys = table_key_metadata.get(fname, {"primary_keys": [], "foreign_keys": []})
 
-        file_profiles[fname] = {
+        table_profiles.append({
+            "file_name": fname,
             "filename": fname,
-            "rows": len(df_raw),
-            "columns": len(df_raw.columns),
+            "row_count": int(len(df_raw)),
+            "rows": int(len(df_raw)),
+            "column_count": int(len(df_raw.columns)),
+            "columns": list(df_raw.columns),
             "column_names": list(df_raw.columns),
-            "memory_mb": round(df_raw.memory_usage(deep=True).sum() / (1024 * 1024), 2),
+            "size_bytes": int(file_size_bytes),
+            "size_mb": round(file_size_bytes / (1024 * 1024), 2),
+            "memory_mb": round(file_size_bytes / (1024 * 1024), 2),
+            "primary_keys": meta_keys["primary_keys"],
+            "foreign_keys": meta_keys["foreign_keys"],
             "null_percentages": null_pct,
             "sample_records": df_raw.head(25).replace({np.nan: None}).to_dict(orient="records")
-        }
+        })
 
     bbb = raw_dfs["ball_by_ball.csv"]
     matches = raw_dfs["matches.csv"]
@@ -223,7 +259,7 @@ def run_pipeline():
             "total_batting_runs": int(bbb["runs"].sum()),
             "total_bowler_runs_conceded": int(bowler_runs_series.sum())
         },
-        "tables": file_profiles
+        "tables": table_profiles
     }
 
     with open(out_dir / "dataset_overview.json", "w", encoding="utf-8") as f:
