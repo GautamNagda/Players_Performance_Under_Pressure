@@ -266,6 +266,33 @@ def run_pipeline():
         json.dump(dataset_overview_json, f, indent=2)
     print(f"[✓] Exported {out_dir / 'dataset_overview.json'}")
 
+    # Export Full/Rich Table Datasets for Deep Tabular Inspection
+    tables_dir = out_dir / "tables"
+    tables_dir.mkdir(parents=True, exist_ok=True)
+    table_limits = {
+        "competitions.csv": None,
+        "teams.csv": None,
+        "matches.csv": None,
+        "competition_team_player_mapping.csv": None,
+        "playing_eleven.csv": 5000,
+        "ball_by_ball.csv": 2000,
+    }
+    for fname, lim in table_limits.items():
+        if fname in raw_dfs:
+            df_full = raw_dfs[fname]
+            df_slice = df_full if lim is None else df_full.head(lim)
+            records = df_slice.replace({np.nan: None}).to_dict(orient="records")
+            tbl_payload = {
+                "file_name": fname,
+                "total_rows": len(df_full),
+                "returned_rows": len(records),
+                "columns": list(df_full.columns),
+                "data": records
+            }
+            with open(tables_dir / fname.replace(".csv", ".json"), "w", encoding="utf-8") as f:
+                json.dump(tbl_payload, f)
+    print(f"[✓] Exported interactive table datasets to {tables_dir}")
+
     # 3. Merging & Feature Engineering for Spec Formulas
     print("\n[*] Preparing Unified Match Dataset...")
     df = (bbb.merge(matches[MATCH_COLS], on="match_id", how="left")

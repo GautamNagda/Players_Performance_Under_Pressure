@@ -177,6 +177,102 @@ class handler(BaseHTTPRequestHandler):
             self.wfile.write(json.dumps(overview).encode("utf-8"))
             return
 
+        # 8. Interactive Table Data Query Endpoint (Streams/Pages Any CSV)
+        if path == "/api/table_data":
+            tbl_param = query.get("table", ["ball_by_ball.csv"])[0].strip()
+            if not tbl_param.endswith(".csv"):
+                tbl_param += ".csv"
+
+            try:
+                page_idx = max(0, int(query.get("page", [0])[0]))
+            except ValueError:
+                page_idx = 0
+            try:
+                limit_val = min(500, max(1, int(query.get("limit", [50])[0])))
+            except ValueError:
+                limit_val = 50
+            search_str = query.get("search", [""])[0].strip().lower()
+
+            # First check if pre-exported table json exists
+            json_fname = "tables/" + tbl_param.replace(".csv", ".json")
+            cached_tbl = load_json(json_fname)
+
+            if cached_tbl and (search_str or (page_idx + 1) * limit_val <= cached_tbl.get("returned_rows", 0)):
+                rows = cached_tbl.get("data", [])
+                cols = cached_tbl.get("columns", [])
+                if search_str:
+                    rows = [
+                        r for r in rows
+                        if any(search_str in str(v).lower() for v in r.values() if v is not None)
+                    ]
+                total_matching = len(rows)
+                start_i = page_idx * limit_val
+                paged_rows = rows[start_i : start_i + limit_val]
+                res = {
+                    "file_name": tbl_param,
+                    "total_rows": cached_tbl.get("total_rows", len(rows)),
+                    "filtered_rows": total_matching,
+                    "page": page_idx,
+                    "limit": limit_val,
+                    "columns": cols,
+                    "data": paged_rows
+                }
+                self._set_headers(200)
+                self.wfile.write(json.dumps(res).encode("utf-8"))
+                return
+
+            # If beyond cached range or direct CSV fallback
+            csv_path = None
+            for p in [Path(__file__).resolve().parent.parent / "Data Pack", Path("Data Pack"), Path("data pack")]:
+                cand = p / tbl_param
+                if cand.exists():
+                    csv_path = cand
+                    break
+
+            if csv_path and csv_path.exists():
+                import csv
+                all_matching = []
+                cols = []
+                with open(csv_path, "r", encoding="utf-8", errors="replace") as f:
+                    reader = csv.DictReader(f)
+                    cols = reader.fieldnames or []
+                    for r in reader:
+                        if search_str:
+                            if any(search_str in str(v).lower() for v in r.values() if v is not None):
+                                all_matching.append(r)
+                        else:
+                            all_matching.append(r)
+                            if len(all_matching) >= (page_idx + 1) * limit_val:
+                                break
+                total_cnt = len(all_matching)
+                start_i = page_idx * limit_val
+                paged_rows = all_matching[start_i : start_i + limit_val]
+                res = {
+                    "file_name": tbl_param,
+                    "total_rows": total_cnt,
+                    "filtered_rows": total_cnt,
+                    "page": page_idx,
+                    "limit": limit_val,
+                    "columns": cols,
+                    "data": paged_rows
+                }
+                self._set_headers(200)
+                self.wfile.write(json.dumps(res).encode("utf-8"))
+                return
+
+            res = {
+                "file_name": tbl_param,
+                "total_rows": 0,
+                "filtered_rows": 0,
+                "page": page_idx,
+                "limit": limit_val,
+                "columns": [],
+                "data": []
+            }
+            self._set_headers(200)
+            self.wfile.write(json.dumps(res).encode("utf-8"))
+            return
+
         # 404 Fallback
         self._set_headers(404)
         self.wfile.write(json.dumps({"error": "Endpoint not found", "path": path}).encode("utf-8"))
